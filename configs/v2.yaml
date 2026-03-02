@@ -1,0 +1,32 @@
+# V2 Transformer Model Configuration
+model:
+  num_char_classes: 99
+  num_wpm_buckets: 10
+  max_encoder_len: 32
+  max_decoder_len: 64
+  char_embed_dim: 32
+  wpm_embed_dim: 16
+  d_model: 64
+  nhead: 4
+  num_encoder_layers: 2
+  num_decoder_layers: 2
+  dim_feedforward: 128
+  dropout: 0.1
+  context_tail_len: 4
+
+training:
+  batch_size: 256
+  epochs: 30
+  learning_rate: 0.0003
+  weight_decay: 0.00001
+  lr_warmup_steps: 1000
+  lr_decay_patience: 3
+  lr_decay_factor: 0.5
+  early_stop_patience: 7
+  val_split: 0.1
+  test_split: 0.05
+  timing_loss_weight: 1.0
+  char_loss_weight: 1.0
+  shuffle_buffer: 100000
+  seed: 42
+  max_samples: 0

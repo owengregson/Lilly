@@ -1,0 +1,31 @@
+# V1 LSTM Model Configuration
+model:
+  seq_len: 32
+  num_char_classes: 97
+  num_wpm_buckets: 10
+  num_dense_features: 14
+  num_actions: 3
+  char_embed_dim: 16
+  wpm_embed_dim: 16
+  action_embed_dim: 8
+  lstm_units_1: 128
+  lstm_units_2: 64
+  dense_units: 64
+  head_units: 32
+  dropout: 0.2
+
+training:
+  batch_size: 512
+  epochs: 30
+  learning_rate: 0.001
+  lr_decay_patience: 3
+  lr_decay_factor: 0.5
+  early_stop_patience: 7
+  val_split: 0.1
+  test_split: 0.05
+  timing_loss_weight: 1.0
+  action_loss_weight: 2.0
+  error_char_loss_weight: 0.5
+  shuffle_buffer: 100000
+  seed: 42
+  max_samples: 0
