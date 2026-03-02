@@ -4,9 +4,7 @@
 
 Lilly is a machine learning pipeline that models realistic human typing behavior — including timing (inter-key intervals), errors, and corrections — trained on the [Aalto 136M Keystrokes](https://userinterfaces.aalto.fi/136Mkeystrokes/) dataset. The end goal is a model that can be exported to TensorFlow.js and run in a Chrome extension to simulate human-like typing in real time.
 
-Two model versions:
-- **V1 (trained):** LSTM-based next-keystroke predictor with three output heads
-- **V2 (in progress):** Transformer encoder-decoder for phrase-level sequence generation
+**V3 Architecture:** Unified encoder-decoder transformer with action-gated decoder, per-action mixture density network (MDN) timing heads, FiLM style conditioning, and QWERTY-biased error character prediction.
 
 ## Package Structure
 
@@ -14,88 +12,89 @@ Two model versions:
 Lilly/
 ├── lilly/                          # Main package
 │   ├── core/                       # Shared utilities
-│   │   ├── config.py               #   All paths, constants, V1/V2 model & training configs
+│   │   ├── config.py               #   Paths, constants, V3ModelConfig, V3TrainConfig
 │   │   ├── encoding.py             #   char_to_id, id_to_char, wpm_to_bucket
-│   │   ├── keyboard.py             #   QWERTY layout, key distances, finger map
-│   │   └── losses.py               #   LogNormalNLL, LogNormalNLLSeq, MaskedSparseCE
+│   │   └── keyboard.py             #   QWERTY layout, key distances, finger map
 │   ├── data/                       # Data pipeline
 │   │   ├── download.py             #   Aalto dataset downloader
 │   │   ├── preprocess.py           #   Raw keystroke parsing & alignment
-│   │   ├── features.py             #   V1 dense feature extraction (14 features)
-│   │   ├── segment.py              #   V2 pause-based segmentation
-│   │   └── pipeline.py             #   tf.data builders (build_v1_datasets, build_v2_datasets)
+│   │   ├── segment.py              #   Inference-time text segmentation
+│   │   ├── segment_v3.py           #   V3 training segment extraction
+│   │   ├── style.py                #   Style vector computation & normalization
+│   │   └── pipeline.py             #   tf.data builder (build_v3_datasets)
 │   ├── models/                     # Model definitions
-│   │   ├── lstm.py                 #   V1 LSTM (build_model, compile_model)
-│   │   └── transformer.py          #   V2 Transformer (TypingTransformer, compute_loss)
+│   │   ├── components.py           #   FiLMModulation, MDNHead, ActionGate, ErrorCharHead
+│   │   └── typing_model.py         #   TypingTransformerV3, EncoderLayer, DecoderLayer
 │   ├── training/                   # Training logic
-│   │   ├── callbacks.py            #   Keras callbacks (make_callbacks)
-│   │   ├── trainer_v1.py           #   V1 Keras .fit() trainer
-│   │   └── trainer_v2.py           #   V2 custom GradientTape trainer
+│   │   ├── losses.py               #   FocalLoss, mdn_mixture_nll, compute_v3_loss
+│   │   ├── schedule.py             #   WarmupCosineDecay LR schedule
+│   │   └── trainer.py              #   V3 custom GradientTape training loop
 │   ├── inference/                  # Generation & preview
-│   │   ├── sampling.py             #   sample_lognormal, weighted_sample, weighted_sample_logits
-│   │   ├── context.py              #   ContextWindow (V1 sliding window, 14 dense features)
-│   │   ├── generator.py            #   generate_v1, generate_v2_segment, generate_v2_full
-│   │   └── preview.py              #   LiveRenderer, live_generate_v1, play_v2_keystrokes
+│   │   ├── sampling.py             #   sample_mdn, weighted_sample, weighted_sample_logits
+│   │   └── generator.py            #   generate_v3_segment, generate_v3_full
 │   ├── evaluation/                 # Metrics & visualization
-│   │   └── evaluator.py            #   evaluate_v1, teacher_forced_metrics, reconstruction_metrics
+│   │   ├── metrics.py              #   Tier 1 point metrics (accuracy, F1, MAE, NLL)
+│   │   ├── distributional.py       #   Tier 2 distributional metrics (Wasserstein, KS)
+│   │   ├── realism.py              #   Tier 3 realism metrics (discriminator, style)
+│   │   └── visualization.py        #   Plotting (IKI, bursts, confusion, MDN, style)
 │   └── export/                     # Model export
-│       └── converter.py            #   export_model (Keras → TF.js pipeline)
+│       └── converter.py            #   export_model, get_v3_custom_objects (Keras → TF.js)
 ├── scripts/                        # CLI entry points (thin wrappers)
-│   ├── download.py                 ├── train.py (--version v1|v2)
-│   ├── preprocess.py               ├── evaluate.py (--version v1|v2)
-│   ├── extract_features.py         ├── generate.py (--version v1|v2)
-│   ├── live_preview.py             └── export.py (--version v1|v2)
+│   ├── download.py                 ├── train.py
+│   ├── preprocess.py               ├── evaluate.py (--tier 1|2|3)
+│   ├── segment_v3.py               ├── generate.py (--wpm, --error-rate)
+│   ├── live_preview.py             └── export.py
 ├── tests/                          # Test suite
 │   ├── test_encoding.py            ├── test_keyboard.py
-│   └── test_segment.py
-├── configs/                        # YAML config files
-│   ├── v1.yaml                     └── v2.yaml
+│   ├── test_segment.py             ├── test_components.py
+│   ├── test_losses.py              ├── test_typing_model.py
+│   ├── test_style.py               └── test_generator.py
 ├── pyproject.toml                  # Package definition & dependencies
-├── Makefile                        # Common commands (make train-v1, make test, etc.)
+├── Makefile                        # Common commands
 └── CLAUDE.md                       # This file
 ```
 
 ## Data Pipeline
 
 ```
-scripts/download.py → scripts/preprocess.py → scripts/extract_features.py → scripts/train.py
+scripts/download.py → scripts/preprocess.py → scripts/segment_v3.py → scripts/train.py
 ```
 
 1. **lilly.data.download** — Downloads and extracts the Aalto 136M Keystrokes zip (~15GB) to `data/raw/`
 2. **lilly.data.preprocess** — Parses raw keystroke files, replays sessions to classify keystrokes as correct/error/backspace. Outputs Parquet to `data/processed/`. Uses `ProcessPoolExecutor`.
-3. **lilly.data.features** — Computes 14 dense features, extracts sliding windows (SEQ_LEN=32), saves `.npz` to `data/tfrecords/`
-4. **lilly.data.pipeline** — `build_v1_datasets()` and `build_v2_datasets()` create `tf.data.Dataset` pipelines
-5. **lilly.training.trainer_v1/v2** — Training with callbacks, checkpointing, early stopping
+3. **lilly.data.segment_v3** — Extracts V3 training segments with style vectors, context windows, and teacher-forced decoder I/O. Outputs `.npz` to `data/v3_segments/`.
+4. **lilly.data.pipeline** — `build_v3_datasets()` creates `tf.data.Dataset` pipeline with train/val/test splits.
+5. **lilly.training.trainer** — Custom GradientTape training with AdamW, WarmupCosineDecay, gradient clipping, checkpointing, early stopping.
 
-## V1 Model Architecture (lilly.models.lstm)
+## V3 Model Architecture (lilly.models.typing_model)
 
-LSTM predicting the **next keystroke** from 32 previous keystrokes.
+Unified encoder-decoder transformer with action-gated generation.
 
-### Inputs
-- `typed_chars` — (batch, 32) int32 — character IDs of what was typed
-- `target_chars` — (batch, 32) int32 — character IDs of what should have been typed
-- `actions` — (batch, 32) int32 — action labels (0=correct, 1=error, 2=backspace)
-- `dense_features` — (batch, 32, 14) float32 — engineered features
-- `wpm_bucket` — (batch, 1) int32 — WPM persona bucket (10 buckets)
+### Encoder
+- Target text → char embedding (48) + sinusoidal PE + FiLM style conditioning
+- 4 encoder layers (d_model=128, nhead=8, dim_feedforward=256)
 
-### Three Output Heads
-1. **timing** — Dense(2) → `[mu, log_sigma]` for LogNormal IKI distribution
-2. **action** — Dense(3, softmax) → correct/error/backspace
-3. **error_char** — Dense(97, softmax) → which wrong key was typed
+### Decoder
+- Autoregressive input: char_id + delay + action embeddings + sinusoidal PE
+- Previous context (tail of last segment) prepended
+- 4 decoder layers with FiLM conditioning, causal self-attention, cross-attention to encoder
 
-### Loss Functions (lilly.core.losses)
-- **Timing:** `LogNormalNLL` — negative log-likelihood of LogNormal in log-space
-- **Action:** Sparse categorical cross-entropy (weight 2.0)
-- **Error char:** Sparse categorical cross-entropy (weight 0.5), masked to action=error
+### Output Heads
+1. **ActionGate** — Dense(64, relu) → Dense(3, softmax) → correct/error/backspace
+2. **3 MDN Timing Heads** — Per-action (correct, error, backspace), each 8-component LogNormal mixture → (pi, mu, log_sigma)
+3. **ErrorCharHead** — Dense(97) with learnable QWERTY distance bias → error character prediction
+4. **PositionHead** — Dense(max_encoder_len) → predicted position in target text
 
-## V2 Model Architecture (lilly.models.transformer)
+### Style Conditioning
+- 16-dimensional style vector computed from session statistics
+- FiLM (Feature-wise Linear Modulation): γ * x + β at every encoder/decoder layer
+- Style features: mean_iki_log, std_iki_log, error_rate, burst_length, correction_latency, etc.
 
-Transformer encoder-decoder generating entire keystroke segments.
-
-- **Encoder:** Target text → char embedding (32) + sinusoidal PE + WPM conditioning → 2 encoder layers (d_model=64, nhead=4)
-- **Decoder:** Autoregressive (char_id, delay) → 2 decoder layers → char_logits (99 classes) + delay params (mu, log_sigma)
-- **Segmentation:** Pause-based (300ms threshold) via `lilly.data.segment`
-- **Loss:** `compute_loss()` = masked char CE + masked timing NLL (`LogNormalNLLSeq`)
+### Loss Functions (lilly.training.losses)
+- **Action:** Focal loss with per-class alpha (0.25, 0.5, 0.5), gamma=2.0
+- **Timing:** MDN mixture NLL (LogNormal), masked per action type
+- **Error char:** Sparse CE masked to action=error
+- **Position:** Sparse CE for target position prediction
 
 ## Character Encoding (lilly.core.encoding)
 
@@ -104,14 +103,14 @@ Transformer encoder-decoder generating entire keystroke segments.
 | 0 | PAD |
 | 1–95 | Printable ASCII (space 0x20 .. tilde 0x7E), `ord(c) - 31` |
 | 96 | BACKSPACE |
-| 97 | END (V2 only) |
-| 98 | START (V2 only) |
+| 97 | END |
+| 98 | START |
 
 ## Key Config Classes (lilly.core.config)
 
-- `V1ModelConfig` / `V1TrainConfig` — V1 LSTM configuration
-- `V2ModelConfig` / `V2TrainConfig` — V2 Transformer configuration
-- Path constants: `PROJECT_ROOT`, `DATA_DIR`, `RAW_DIR`, `PROCESSED_DIR`, `TFRECORD_DIR`, `V2_SEGMENT_DIR`, `MODEL_DIR`, `V2_MODEL_DIR`, `EXPORT_DIR`, `V2_EXPORT_DIR`
+- `V3ModelConfig` — d_model=128, nhead=8, 4 layers, char_embed=48, action_embed=16, delay_embed=16, style_dim=16, mdn_components=8, max_decoder_len=80, max_encoder_len=32, context_tail_len=16
+- `V3TrainConfig` — batch_size=128, epochs=50, lr=3e-4, warmup_steps=2000, focal_gamma=2.0, focal_alpha=(0.25, 0.5, 0.5)
+- Path constants: `PROJECT_ROOT`, `DATA_DIR`, `RAW_DIR`, `PROCESSED_DIR`, `V3_SEGMENT_DIR`, `V3_MODEL_DIR`, `V3_EXPORT_DIR`
 
 ## Commands
 
@@ -119,25 +118,23 @@ Transformer encoder-decoder generating entire keystroke segments.
 # Install
 pip install -e ".[dev]"
 
-# Full V1 pipeline
+# Full pipeline
 python scripts/download.py
 python scripts/preprocess.py --workers 8
-python scripts/extract_features.py
-python scripts/train.py --version v1 --epochs 30
+python scripts/segment_v3.py --workers 8
+python scripts/train.py --epochs 50
 
-# V2 pipeline
-python scripts/train.py --version v2
-
-# Evaluate
-python scripts/evaluate.py models/run_XXX/final_model.keras
-python scripts/evaluate.py --version v2 models/v2/run_XXX/best_model.keras
+# Evaluate (tiered)
+python scripts/evaluate.py models/v3/run_XXX/best_model.keras --tier 1
+python scripts/evaluate.py models/v3/run_XXX/best_model.keras --tier 2 --n-samples 500
+python scripts/evaluate.py models/v3/run_XXX/best_model.keras --tier 3
 
 # Generate / Preview
-python scripts/generate.py models/run_XXX/final_model.keras "The quick brown fox"
+python scripts/generate.py models/v3/run_XXX/best_model.keras "The quick brown fox" --wpm 80
 python scripts/live_preview.py --wpm 80 "Hello, world!"
 
 # Export to TF.js
-python scripts/export.py models/run_XXX/best_model.keras --quantize uint8
+python scripts/export.py models/v3/run_XXX/best_model.keras --quantize uint8
 
 # Test & Lint
 make test
@@ -146,12 +143,10 @@ make lint
 
 ## Known Issues
 
-1. **V1 action prediction imbalance:** Heavily biased toward "correct" (~90%+ of keystrokes). Error/backspace predictions unreliable.
-2. **V1 generate.py hardcodes correction:** Forces immediate backspace+retype after errors. Live preview lets model decide.
-3. **V1 timing MAE:** ~117ms. Could improve with V2's richer context.
-4. **Dataset scale:** Processing full 136M keystrokes requires significant disk space and time.
+1. **Dataset scale:** Processing full 136M keystrokes requires significant disk space and time.
+2. **Style vector normalization:** StyleNormalizer should be fit on training data before inference. Without normalization, style dimensions have different scales.
 
 ## Dependencies
 
-Defined in `pyproject.toml`. Core: tensorflow, numpy, pandas, pyarrow, tqdm, requests.
+Defined in `pyproject.toml`. Core: tensorflow, numpy, pandas, pyarrow, tqdm, requests, scipy.
 Optional: tensorflowjs (export), matplotlib + scikit-learn (eval), pytest + ruff (dev).
