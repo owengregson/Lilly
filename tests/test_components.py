@@ -1,7 +1,6 @@
 """Unit tests for V3 model components."""
 import numpy as np
 import tensorflow as tf
-import pytest
 
 
 class TestFiLMModulation:

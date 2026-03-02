@@ -1,14 +1,14 @@
 """Unit tests for V3 generation logic."""
-import pytest
 
 
 class TestGenerateV3Segment:
     def test_produces_keystrokes(self):
         """Generate should return a non-empty list of keystrokes."""
-        from lilly.models.typing_model import build_model
-        from lilly.inference.generator import generate_v3_segment
-        from lilly.core.config import V3ModelConfig
         import numpy as np
+
+        from lilly.core.config import V3ModelConfig
+        from lilly.inference.generator import generate_v3_segment
+        from lilly.models.typing_model import build_model
 
         cfg = V3ModelConfig()
         model = build_model(cfg)
@@ -20,10 +20,11 @@ class TestGenerateV3Segment:
         assert len(keystrokes) > 0
 
     def test_keystroke_has_required_fields(self):
-        from lilly.models.typing_model import build_model
-        from lilly.inference.generator import generate_v3_segment
-        from lilly.core.config import V3ModelConfig
         import numpy as np
+
+        from lilly.core.config import V3ModelConfig
+        from lilly.inference.generator import generate_v3_segment
+        from lilly.models.typing_model import build_model
 
         cfg = V3ModelConfig()
         model = build_model(cfg)

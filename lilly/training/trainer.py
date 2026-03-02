@@ -26,7 +26,8 @@ def _compute_action_accuracy(outputs, labels):
     """Compute masked action accuracy."""
     mask = labels["label_mask"]
     pred_actions = tf.argmax(outputs["action_probs"], axis=-1)
-    correct = tf.cast(tf.equal(pred_actions, tf.cast(labels["action_labels"], tf.int64)), tf.float32)
+    true_actions = tf.cast(labels["action_labels"], tf.int64)
+    correct = tf.cast(tf.equal(pred_actions, true_actions), tf.float32)
     return tf.reduce_sum(correct * mask) / tf.maximum(tf.reduce_sum(mask), 1.0)
 
 
@@ -242,7 +243,8 @@ def train(
         else:
             patience_counter += 1
             if patience_counter >= train_cfg.early_stop_patience:
-                print(f"\nEarly stopping at epoch {epoch} (patience={train_cfg.early_stop_patience})")
+                patience = train_cfg.early_stop_patience
+                print(f"\nEarly stopping at epoch {epoch} (patience={patience})")
                 break
 
     csv_file.close()

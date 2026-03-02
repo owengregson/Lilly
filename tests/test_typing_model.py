@@ -1,7 +1,5 @@
 """Unit tests for the V3 TypingTransformerV3 model."""
 import tensorflow as tf
-import numpy as np
-import pytest
 
 from lilly.core.config import V3ModelConfig
 

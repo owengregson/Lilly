@@ -78,7 +78,7 @@ def main():
 
     if args.tier >= 3:
         print("\n--- Tier 3: Realism Metrics ---")
-        from lilly.evaluation.realism import compute_realism_score, check_style_consistency
+        from lilly.evaluation.realism import check_style_consistency, compute_realism_score
 
         t3 = compute_realism_score(model, test_ds, model_cfg, n_samples=args.n_samples)
         style = check_style_consistency(model, model_cfg)

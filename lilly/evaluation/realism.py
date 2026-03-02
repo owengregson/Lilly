@@ -6,7 +6,6 @@ Includes discriminator-based realism scoring and style consistency checks.
 from __future__ import annotations
 
 import numpy as np
-import tensorflow as tf
 from tensorflow import keras
 
 from lilly.core.config import V3ModelConfig

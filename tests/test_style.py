@@ -1,7 +1,6 @@
 """Unit tests for style vector computation."""
 import numpy as np
 import pandas as pd
-import pytest
 
 
 def _make_session_df(n=100):
@@ -46,7 +45,7 @@ class TestComputeStyleVector:
 
 class TestStyleNormalization:
     def test_normalize_and_denormalize(self):
-        from lilly.data.style import compute_style_vector, StyleNormalizer
+        from lilly.data.style import StyleNormalizer, compute_style_vector
         vectors = np.stack([compute_style_vector(_make_session_df()) for _ in range(20)])
         norm = StyleNormalizer.fit(vectors)
         normed = norm.transform(vectors)

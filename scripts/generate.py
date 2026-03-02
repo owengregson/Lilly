@@ -90,9 +90,12 @@ def main():
         n_errors = sum(1 for ks in keystrokes if ks.action == 1)
         n_backspace = sum(1 for ks in keystrokes if ks.action == 2)
         actual_wpm = (len(text) / 5.0) / max(total_ms / 60000.0, 0.001)
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"  Total time: {total_ms:.0f}ms")
-        print(f"  Keystrokes: {len(keystrokes)} (correct={n_correct}, error={n_errors}, backspace={n_backspace})")
+        print(
+            f"  Keystrokes: {len(keystrokes)} "
+            f"(correct={n_correct}, error={n_errors}, backspace={n_backspace})"
+        )
         print(f"  Actual WPM: {actual_wpm:.1f}")
 
 

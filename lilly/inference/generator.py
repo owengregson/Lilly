@@ -13,8 +13,6 @@ import tensorflow as tf
 
 from lilly.core.config import (
     BACKSPACE_TOKEN,
-    END_TOKEN,
-    PAD_TOKEN,
     START_TOKEN,
     V3ModelConfig,
 )
@@ -82,12 +80,13 @@ def generate_v3_segment(
     ctx_actions = np.zeros((1, cfg.context_tail_len), dtype=np.int32)
     ctx_delays = np.zeros((1, cfg.context_tail_len), dtype=np.float32)
     if prev_context is not None:
-        for i, v in enumerate(prev_context.get("chars", [])[-cfg.context_tail_len:]):
-            ctx_chars[0, cfg.context_tail_len - len(prev_context["chars"][-cfg.context_tail_len:]) + i] = v
-        for i, v in enumerate(prev_context.get("actions", [])[-cfg.context_tail_len:]):
-            ctx_actions[0, cfg.context_tail_len - len(prev_context["actions"][-cfg.context_tail_len:]) + i] = v
-        for i, v in enumerate(prev_context.get("delays", [])[-cfg.context_tail_len:]):
-            ctx_delays[0, cfg.context_tail_len - len(prev_context["delays"][-cfg.context_tail_len:]) + i] = v
+        tail_len = cfg.context_tail_len
+        for key, arr in [("chars", ctx_chars), ("actions", ctx_actions),
+                         ("delays", ctx_delays)]:
+            vals = prev_context.get(key, [])[-tail_len:]
+            offset = tail_len - len(vals)
+            for i, v in enumerate(vals):
+                arr[0, offset + i] = v
 
     # Initialize decoder sequence with START token
     dec_len = cfg.max_decoder_len + 1

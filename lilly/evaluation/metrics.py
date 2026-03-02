@@ -6,8 +6,6 @@ on a held-out dataset.
 
 from __future__ import annotations
 
-from collections import defaultdict
-
 import numpy as np
 import tensorflow as tf
 

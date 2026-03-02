@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
-from lilly.core.keyboard import KEY_POSITIONS, SHIFT_MAP, key_distance
+from lilly.core.keyboard import key_distance
 
 
 class FiLMModulation(keras.layers.Layer):

@@ -1,7 +1,6 @@
 """Unit tests for V3 loss functions."""
 import numpy as np
 import tensorflow as tf
-import pytest
 
 
 class TestFocalLoss:
@@ -71,7 +70,7 @@ class TestMDNMixtureLoss:
 
 class TestCombinedV3Loss:
     def test_runs_without_error(self):
-        from lilly.training.losses import compute_v3_loss, V3LossConfig
+        from lilly.training.losses import V3LossConfig, compute_v3_loss
         cfg = V3LossConfig()
         outputs = {
             "action_probs": tf.constant([[[0.8, 0.1, 0.1], [0.7, 0.2, 0.1]]]),

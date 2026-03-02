@@ -7,7 +7,6 @@ action confusion matrices, MDN components, and style interpolation.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 import numpy as np
 
@@ -165,7 +164,8 @@ def plot_mdn_components(
         mixture = np.zeros_like(x)
         for k in range(len(pi)):
             sigma = np.exp(log_sigma[k])
-            component = pi[k] * np.exp(-0.5 * ((x - mu[k]) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+            gauss = np.exp(-0.5 * ((x - mu[k]) / sigma) ** 2)
+            component = pi[k] * gauss / (sigma * np.sqrt(2 * np.pi))
             ax.plot(x, component, alpha=0.3, label=f"k={k}")
             mixture += component
         ax.plot(x, mixture, "k-", linewidth=2, label="mixture")
@@ -188,6 +188,7 @@ def plot_style_interpolation(
 ) -> None:
     """Generate at interpolated styles and plot IKI distributions."""
     import matplotlib.pyplot as plt
+
     from lilly.inference.generator import generate_v3_full
 
     fig, ax = plt.subplots(figsize=(10, 6))

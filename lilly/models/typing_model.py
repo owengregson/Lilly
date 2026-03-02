@@ -273,8 +273,6 @@ class TypingTransformerV3(keras.Model):
                 prev_context_actions, prev_context_delays,
                 encoder_output, enc_mask, style_vector, training=False):
         """Decode with causal self-attention and cross-attention to encoder."""
-        batch_size = tf.shape(decoder_input_chars)[0]
-
         # --- Build context embeddings ---
         ctx_char = self.context_char_embed(prev_context_chars)
         ctx_action = self.context_action_embed(prev_context_actions)

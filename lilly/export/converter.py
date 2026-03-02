@@ -14,16 +14,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-import tensorflow as tf
 from tensorflow import keras
 
 
 def get_v3_custom_objects() -> dict:
     """Return V3 custom objects dict for model deserialization."""
-    from lilly.models.typing_model import TypingTransformerV3
     from lilly.models.components import (
-        FiLMModulation, MDNHead, ActionGate, ErrorCharHead,
+        ActionGate,
+        ErrorCharHead,
+        FiLMModulation,
+        MDNHead,
     )
+    from lilly.models.typing_model import TypingTransformerV3
     return {
         "TypingTransformerV3": TypingTransformerV3,
         "FiLMModulation": FiLMModulation,

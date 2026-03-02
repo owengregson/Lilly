@@ -6,12 +6,10 @@ using Wasserstein distance, KS tests, and autocorrelation metrics.
 
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 
 from lilly.core.config import PAUSE_THRESHOLD_MS, V3ModelConfig
-from lilly.inference.generator import GeneratedKeystroke, generate_v3_full
+from lilly.inference.generator import generate_v3_full
 
 
 def compute_tier2_metrics(

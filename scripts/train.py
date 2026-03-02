@@ -2,7 +2,8 @@
 """Train the V3 typing model."""
 import argparse
 from pathlib import Path
-from lilly.core.config import V3_SEGMENT_DIR, V3_MODEL_DIR, V3ModelConfig, V3TrainConfig
+
+from lilly.core.config import V3_MODEL_DIR, V3_SEGMENT_DIR, V3TrainConfig
 from lilly.training.trainer import train
 
 
