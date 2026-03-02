@@ -115,5 +115,4 @@ export/
 logs/
 tensorboard/
 
-# Design documents (auto-generated)
-docs/plans/
+# Design documents — tracked in git
