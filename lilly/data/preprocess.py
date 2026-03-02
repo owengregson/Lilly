@@ -305,6 +305,19 @@ def write_chunk_parquet(df: pd.DataFrame, out_path: Path) -> None:
     )
 
 
+def validate_parquet(path: Path) -> bool:
+    """Check if a parquet file is complete and not corrupted.
+
+    Reads only the footer metadata (fast) — a truncated write will have
+    a missing or corrupt footer and will fail here.
+    """
+    try:
+        pq.read_metadata(path)
+        return True
+    except Exception:
+        return False
+
+
 def find_keystroke_files(data_dir: Path) -> List[Path]:
     """Find all *_keystrokes.txt files recursively."""
     files: List[Path] = []
@@ -324,8 +337,12 @@ def find_keystroke_files(data_dir: Path) -> List[Path]:
 
 
 def _auto_detect_workers() -> int:
-    """Auto-detect worker count: 75% of CPU cores, clamped to [1, 128]."""
-    cpu_count = os.cpu_count() or 4
-    return max(1, min(int(cpu_count * 0.75), 128))
+    """Auto-detect worker count.
+
+    .. deprecated:: Use ``lilly.core.hardware.detect_workers()`` instead.
+    """
+    from lilly.core.hardware import detect_workers
+
+    return detect_workers()
 
 

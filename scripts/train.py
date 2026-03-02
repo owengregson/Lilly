@@ -59,7 +59,20 @@ def main() -> None:
         ui.update(
             f"epoch {epoch}/{train_cfg.epochs} | "
             f"loss={train_loss:.4f}/{val_loss:.4f} | "
-            f"acc={acc:.3f} | {time_s:.1f}s"
+            f"acc={acc:.3f} | {time_s:.1f}s",
+            progress=epoch / train_cfg.epochs,
+        )
+
+    def on_batch(epoch, batch, steps_per_epoch, total_epochs, batch_loss):
+        # Overall fraction: how far through all batches across all epochs
+        batches_done = (epoch - 1) * steps_per_epoch + batch
+        total_batches = total_epochs * steps_per_epoch
+        frac = batches_done / max(total_batches, 1)
+        ui.update(
+            f"epoch {epoch}/{total_epochs} | "
+            f"batch {batch}/{steps_per_epoch} | "
+            f"loss={batch_loss:.4f}",
+            progress=frac,
         )
 
     run_dir, metadata = train(
@@ -67,6 +80,9 @@ def main() -> None:
         model_cfg=model_cfg, train_cfg=train_cfg,
         run_name=args.run_name, max_files=args.max_files,
         progress_callback=on_epoch,
+        batch_callback=on_batch,
+        datasets=(train_ds, val_ds, test_ds, n_total),
+        model=model,
     )
     epochs_trained = metadata.get("epochs_trained", "?")
     best_loss = metadata.get("best_val_loss", 0)

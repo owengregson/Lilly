@@ -186,6 +186,26 @@ def _split_long_group(group: List[dict]) -> List[List[dict]]:
     return result
 
 
+_EXPECTED_NPZ_KEYS = frozenset({
+    "encoder_chars", "encoder_lengths", "decoder_chars",
+    "decoder_delays", "decoder_actions", "decoder_lengths",
+    "style_vector", "prev_context_chars", "prev_context_actions",
+    "prev_context_delays",
+})
+
+
+def validate_segment_npz(path: Path) -> bool:
+    """Check if a segment .npz file is complete and not corrupted.
+
+    Verifies the ZIP structure is intact and all expected arrays are present.
+    """
+    try:
+        data = np.load(path, allow_pickle=False)
+        return _EXPECTED_NPZ_KEYS.issubset(set(data.files))
+    except Exception:
+        return False
+
+
 def process_chunk(parquet_path: Path, output_dir: Path) -> int:
     """Process a single Parquet chunk into V3 segments.
 

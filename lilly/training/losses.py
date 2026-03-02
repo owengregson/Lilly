@@ -9,7 +9,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 
-@dataclass
+@dataclass(frozen=True)
 class V3LossConfig:
     action_weight: float = 3.0
     timing_weight: float = 1.0

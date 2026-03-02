@@ -85,6 +85,9 @@ def train(
     run_name: str | None = None,
     max_files: int = 0,
     progress_callback: Optional[Callable] = None,
+    batch_callback: Optional[Callable] = None,
+    datasets: tuple | None = None,
+    model: tf.keras.Model | None = None,
 ) -> tuple[Path, dict]:
     """Train the V3 model.
 
@@ -95,7 +98,14 @@ def train(
         train_cfg: Training configuration.
         run_name: Name for this training run.
         max_files: Max segment files to load (0 = all).
-        progress_callback: Called with (epoch, train_loss, val_loss, acc, lr, time_s).
+        progress_callback: Called with (epoch, train_loss, val_loss, acc, lr, time_s)
+            at the end of each epoch.
+        batch_callback: Called during training with
+            (epoch, batch, steps_per_epoch, total_epochs, batch_loss).
+            Throttled internally to ~4 updates/sec.
+        datasets: Pre-built (train_ds, val_ds, test_ds, n_total) tuple to avoid
+            reloading data. If None, datasets are built from data_dir.
+        model: Pre-built model. If None, a new model is built from model_cfg.
 
     Returns:
         (run_dir, metadata_dict)
@@ -111,13 +121,17 @@ def train(
     run_dir = model_dir / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build datasets
-    train_ds, val_ds, test_ds, n_total = build_v3_datasets(
-        data_dir, model_cfg, train_cfg, max_files=max_files,
-    )
+    # Build datasets (or reuse pre-built ones)
+    if datasets is not None:
+        train_ds, val_ds, test_ds, n_total = datasets
+    else:
+        train_ds, val_ds, test_ds, n_total = build_v3_datasets(
+            data_dir, model_cfg, train_cfg, max_files=max_files,
+        )
 
-    # Build model
-    model = build_model(model_cfg)
+    # Build model (or reuse pre-built one)
+    if model is None:
+        model = build_model(model_cfg)
 
     # Compute total steps for LR schedule
     steps_per_epoch = max(1, n_total // train_cfg.batch_size)
@@ -170,7 +184,8 @@ def train(
         train_accs = []
         train_maes = []
 
-        for batch_inputs, batch_labels in train_ds:
+        _last_batch_cb = epoch_start
+        for batch_idx, (batch_inputs, batch_labels) in enumerate(train_ds, 1):
             total, comps, acc, mae = train_step(
                 model, optimizer, batch_inputs, batch_labels, loss_cfg,
             )
@@ -181,6 +196,15 @@ def train(
             train_losses["position"].append(float(comps["position"]))
             train_accs.append(float(acc))
             train_maes.append(float(mae))
+
+            if batch_callback:
+                now = time.time()
+                if now - _last_batch_cb >= 0.25:
+                    _last_batch_cb = now
+                    batch_callback(
+                        epoch, batch_idx, steps_per_epoch,
+                        train_cfg.epochs, float(total),
+                    )
 
         # --- Validation ---
         val_losses = {"total": [], "action": [], "timing": [],

@@ -11,7 +11,6 @@ from lilly.core.config import (
     END_TOKEN,
     PAD_TOKEN,
     START_TOKEN,
-    V3_SEGMENT_DIR,
     V3ModelConfig,
     V3TrainConfig,
 )
@@ -123,16 +122,13 @@ def build_v3_datasets(
 
     Returns (train_ds, val_ds, test_ds, n_total).
     """
-    print("Loading V3 segment files...")
     arrays = load_v3_segment_files(data_dir, max_files)
 
     n_total = len(arrays["encoder_chars"])
-    print(f"  Total segments: {n_total:,}")
 
     if train_cfg.max_samples > 0:
         n_total = min(n_total, train_cfg.max_samples)
         arrays = {k: v[:n_total] for k, v in arrays.items()}
-        print(f"  Capped to: {n_total:,}")
 
     # Shuffle
     rng = np.random.default_rng(train_cfg.seed)
@@ -158,7 +154,6 @@ def build_v3_datasets(
     n_test = int(n_total * train_cfg.test_split)
     n_val = int(n_total * train_cfg.val_split)
     n_train = n_total - n_val - n_test
-    print(f"  Train: {n_train:,}  Val: {n_val:,}  Test: {n_test:,}")
 
     def _make_ds(start, end, shuffle):
         s = slice(start, end)

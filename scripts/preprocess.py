@@ -10,10 +10,11 @@ import pandas as pd
 
 from lilly.cli.ui import BannerAnimator, ProgressUI, print_banner, t
 from lilly.core.config import PROCESSED_DIR, RAW_DIR
+from lilly.core.hardware import detect_workers
 from lilly.data.preprocess import (
-    _auto_detect_workers,
     find_keystroke_files,
     process_file,
+    validate_parquet,
     write_chunk_parquet,
 )
 
@@ -24,12 +25,14 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=PROCESSED_DIR)
     parser.add_argument("--max-files", type=int, default=0)
     parser.add_argument("--workers", type=int, default=0,
-                        help="Number of workers (0 = auto-detect: 75%% of CPU cores)")
+                        help="Number of workers (0 = auto-detect)")
     parser.add_argument("--chunk-size", type=int, default=500)
+    parser.add_argument("--reprocess", action="store_true",
+                        help="Reprocess all chunks (ignore existing output)")
     args = parser.parse_args()
 
     if args.workers <= 0:
-        args.workers = _auto_detect_workers()
+        args.workers = detect_workers()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -51,16 +54,32 @@ def main() -> None:
         files = files[:args.max_files]
     ui.done(label, f"{len(files)} files, {args.workers} workers")
 
-    # Step 2: Process chunks
+    # Step 2: Process chunks (with resume + validation)
     label = "Processing chunks"
     ui.begin(label)
 
-    total_sessions = 0
-    total_keystrokes = 0
-    chunk_idx = 0
+    total_chunks = (len(files) + args.chunk_size - 1) // args.chunk_size
+    chunks_written = 0
+    chunks_skipped = 0
+    chunks_replaced = 0
     files_done = 0
 
-    for chunk_start in range(0, len(files), args.chunk_size):
+    for chunk_idx, chunk_start in enumerate(range(0, len(files), args.chunk_size)):
+        out_path = args.output_dir / f"keystrokes_chunk_{chunk_idx:04d}.parquet"
+        chunk_file_count = min(args.chunk_size, len(files) - chunk_start)
+
+        # Resume: skip chunks whose output already exists and is valid
+        if out_path.exists() and not args.reprocess:
+            if validate_parquet(out_path):
+                files_done += chunk_file_count
+                chunks_skipped += 1
+                ui.update(f"chunk {chunk_idx} verified, skipping")
+                continue
+            else:
+                # Corrupt / incomplete — remove and reprocess
+                out_path.unlink()
+                chunks_replaced += 1
+
         chunk_files = files[chunk_start:chunk_start + args.chunk_size]
         chunk_dfs: List[pd.DataFrame] = []
 
@@ -74,29 +93,26 @@ def main() -> None:
                 except Exception:
                     pass
                 files_done += 1
-                ui.update(f"chunk {chunk_idx} | file {files_done}/{len(files)}")
+                ui.update(f"chunk {chunk_idx}/{total_chunks} | file {files_done}/{len(files)}")
 
         if chunk_dfs:
             combined = pd.concat(chunk_dfs, ignore_index=True)
-            out_path = args.output_dir / f"keystrokes_chunk_{chunk_idx:04d}.parquet"
             write_chunk_parquet(combined, out_path)
 
-            n_sessions = combined["session_id"].nunique()
-            n_keystrokes = len(combined)
-            total_sessions += n_sessions
-            total_keystrokes += n_keystrokes
+        chunks_written += 1
 
-        chunk_idx += 1
-
-    ui.done(label, f"{chunk_idx} chunks written")
+    detail = f"{chunks_written} chunks written"
+    if chunks_skipped:
+        detail += f", {chunks_skipped} skipped (verified)"
+    if chunks_replaced:
+        detail += f", {chunks_replaced} replaced (were corrupt)"
+    ui.done(label, detail)
 
     # Step 3: Summary
     label = "Summary"
     ui.begin(label)
-    ui.done(
-        label,
-        f"{total_sessions:,} sessions, {total_keystrokes:,} keystrokes",
-    )
+    all_parquet = list(args.output_dir.glob("keystrokes_chunk_*.parquet"))
+    ui.done(label, f"{len(all_parquet)} total chunks in {args.output_dir}")
 
     animator.stop()
     ui.finish()

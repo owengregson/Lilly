@@ -5,7 +5,7 @@ import sys
 
 from lilly.cli.ui import BannerAnimator, ProgressUI, print_banner, t
 from lilly.core.config import DATASET_URL, DATASET_ZIP, RAW_DIR
-from lilly.data.download import download, extract, verify
+from lilly.data.download import download, expected_keystroke_count, extract, verify
 
 
 def main() -> None:
@@ -13,6 +13,8 @@ def main() -> None:
     parser.add_argument("--url", type=str, default=DATASET_URL)
     parser.add_argument("--dest", type=str, default=str(DATASET_ZIP))
     parser.add_argument("--data-dir", type=str, default=str(RAW_DIR))
+    parser.add_argument("--redownload", action="store_true",
+                        help="Re-extract even if files already exist")
     args = parser.parse_args()
 
     from pathlib import Path
@@ -29,9 +31,10 @@ def main() -> None:
     # Step 1: Check dataset status
     label = "Checking dataset status"
     ui.begin(label)
+    existing_count = verify(data_dir) if data_dir.exists() else 0
     if dest.exists():
         size_gb = dest.stat().st_size / 1e9
-        ui.done(label, f"zip exists ({size_gb:.2f} GB)")
+        ui.done(label, f"zip exists ({size_gb:.2f} GB), {existing_count} files extracted")
     else:
         ui.done(label, "not yet downloaded")
 
@@ -53,15 +56,32 @@ def main() -> None:
         size_gb = result["size_bytes"] / 1e9
         ui.done(label, f"{size_gb:.2f} GB")
 
-    # Step 3: Extract
+    # Step 3: Extract (skip if all expected files are already present)
     label = "Extracting archive"
-    ui.begin(label)
+    expected = expected_keystroke_count(dest)
+    extraction_complete = (
+        existing_count > 0
+        and expected > 0
+        and existing_count >= expected
+        and not args.redownload
+    )
 
-    def ext_progress(extracted: int, total: int) -> None:
-        ui.update(f"{extracted}/{total} files")
+    if extraction_complete:
+        ui.skip(label, f"all {existing_count} files already extracted")
+    else:
+        if existing_count > 0 and expected > 0:
+            detail = f"incomplete ({existing_count}/{expected} files)"
+        else:
+            detail = ""
+        ui.begin(label)
+        if detail:
+            ui.update(detail)
 
-    extract(zip_path=dest, dest_dir=data_dir, progress_callback=ext_progress)
-    ui.done(label, str(data_dir))
+        def ext_progress(extracted: int, total: int) -> None:
+            ui.update(f"{extracted}/{total} files")
+
+        extract(zip_path=dest, dest_dir=data_dir, progress_callback=ext_progress)
+        ui.done(label, str(data_dir))
 
     # Step 4: Verify
     label = "Verifying files"
@@ -71,7 +91,10 @@ def main() -> None:
         ui.fail(label, "No keystroke files found after extraction!")
         animator.stop()
         sys.exit(1)
-    ui.done(label, f"{count} keystroke files")
+    if expected > 0 and count < expected:
+        ui.warn(label, f"only {count}/{expected} keystroke files (some may be missing)")
+    else:
+        ui.done(label, f"{count} keystroke files")
 
     animator.stop()
     ui.finish()

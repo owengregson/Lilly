@@ -85,3 +85,18 @@ def verify(data_dir: Path = RAW_DIR) -> int:
         Number of *_keystrokes.txt files found.
     """
     return len(list(data_dir.rglob("*_keystrokes.txt")))
+
+
+def expected_keystroke_count(zip_path: Path = DATASET_ZIP) -> int:
+    """Count *_keystrokes.txt members inside the zip without extracting.
+
+    Returns 0 if the zip is missing or corrupt.
+    """
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            return sum(
+                1 for name in zf.namelist()
+                if name.endswith("_keystrokes.txt")
+            )
+    except Exception:
+        return 0
