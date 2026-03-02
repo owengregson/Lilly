@@ -1,133 +1,133 @@
 #!/usr/bin/env python3
-"""Evaluate a trained model.
+"""Evaluate a trained V3 model.
 
 Usage:
-    python scripts/evaluate.py models/run_XXX/final_model.keras
-    python scripts/evaluate.py --version v2 models/v2/run_XXX/best_model.keras
+    python scripts/evaluate.py models/v3/run_XXX/best_model.keras
+    python scripts/evaluate.py models/v3/run_XXX/best_model.keras --tier 2
+    python scripts/evaluate.py models/v3/run_XXX/best_model.keras --tier 3 --n-samples 500
 """
 import argparse
 import json
-import sys
 from pathlib import Path
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate typing model")
+    parser = argparse.ArgumentParser(description="Evaluate V3 typing model")
     parser.add_argument("model_path", type=Path, help="Path to .keras model")
-    parser.add_argument("--version", choices=["v1", "v2"], default="v1")
+    parser.add_argument("--tier", type=int, default=1, choices=[1, 2, 3],
+                        help="Evaluation tier (1=point, 2=distributional, 3=realism)")
     parser.add_argument("--data-dir", type=Path, default=None)
     parser.add_argument("--max-files", type=int, default=0)
+    parser.add_argument("--n-samples", type=int, default=1000)
     parser.add_argument("--output-dir", type=Path, default=None)
-    parser.add_argument("--recon-samples", type=int, default=100,
-                       help="V2 reconstruction samples")
+    parser.add_argument("--visualize", action="store_true",
+                        help="Generate visualization plots (Tier 1 only)")
     args = parser.parse_args()
 
-    if args.version == "v2":
-        _evaluate_v2(args)
-    else:
-        _evaluate_v1(args)
-
-
-def _evaluate_v1(args):
     import numpy as np
-    import tensorflow as tf
     from tensorflow import keras
 
-    from lilly.core.config import TFRECORD_DIR, V1TrainConfig
-    from lilly.data.pipeline import build_v1_datasets
-    from lilly.evaluation.evaluator import (
-        evaluate_v1,
-        plot_action_confusion,
-        plot_timing_distribution,
-    )
-    from lilly.models.lstm import compile_model
+    from lilly.core.config import V3_SEGMENT_DIR, V3ModelConfig, V3TrainConfig
+    from lilly.data.pipeline import build_v3_datasets
+    from lilly.export.converter import get_v3_custom_objects
 
+    model_cfg = V3ModelConfig()
+    train_cfg = V3TrainConfig()
+    data_dir = args.data_dir or V3_SEGMENT_DIR
     output_dir = args.output_dir or args.model_path.parent / "eval"
     output_dir.mkdir(parents=True, exist_ok=True)
-    data_dir = args.data_dir or TFRECORD_DIR
 
     print("=" * 60)
-    print("V1 Model Evaluation")
+    print(f"V3 Model Evaluation — Tier {args.tier}")
     print("=" * 60)
 
-    model = keras.models.load_model(str(args.model_path), compile=False)
-    compile_model(model)
+    # Load model
+    print(f"Loading model: {args.model_path}")
+    model = keras.models.load_model(
+        str(args.model_path), compile=False,
+        custom_objects=get_v3_custom_objects(),
+    )
 
-    train_cfg = V1TrainConfig()
-    _, _, test_ds, n_total = build_v1_datasets(data_dir, train_cfg, max_files=args.max_files)
+    # Load dataset
+    print(f"Loading data from: {data_dir}")
+    _, _, test_ds, n_total = build_v3_datasets(
+        data_dir, model_cfg, train_cfg, max_files=args.max_files,
+    )
+    print(f"Total samples: {n_total}")
 
-    # Add sample weights for evaluation
-    def add_weights(inputs, labels):
-        action_labels = labels["action"]
-        error_mask = tf.cast(tf.equal(action_labels, 1), tf.float32)
-        return inputs, labels, {
-            "timing": tf.ones_like(labels["timing"]),
-            "action": tf.ones_like(tf.cast(labels["action"], tf.float32)),
-            "error_char": error_mask,
-        }
+    metrics = {}
 
-    test_ds = test_ds.map(add_weights, num_parallel_calls=tf.data.AUTOTUNE)
+    if args.tier >= 1:
+        print("\n--- Tier 1: Point Metrics ---")
+        from lilly.evaluation.metrics import compute_tier1_metrics
+        from lilly.training.losses import V3LossConfig
 
-    metrics = evaluate_v1(model, test_ds)
+        t1 = compute_tier1_metrics(model, test_ds, V3LossConfig())
+        metrics["tier1"] = t1
+        for k, v in sorted(t1.items()):
+            print(f"  {k:30s}: {v:.4f}" if isinstance(v, float) else f"  {k:30s}: {v}")
 
-    pred_timing = metrics.pop("_pred_timing")
-    true_iki_log = metrics.pop("_true_iki_log")
-    pred_action = metrics.pop("_pred_action")
-    true_action = metrics.pop("_true_action")
+    if args.tier >= 2:
+        print("\n--- Tier 2: Distributional Metrics ---")
+        from lilly.evaluation.distributional import compute_tier2_metrics
 
-    print("\n" + "=" * 60)
-    print("Results:")
-    for key, val in sorted(metrics.items()):
-        if isinstance(val, float):
-            print(f"  {key:30s}: {val:.4f}")
-        else:
-            print(f"  {key:30s}: {val}")
-    print("=" * 60)
+        t2 = compute_tier2_metrics(model, test_ds, model_cfg, n_samples=args.n_samples)
+        metrics["tier2"] = t2
+        for k, v in sorted(t2.items()):
+            print(f"  {k:30s}: {v:.4f}" if isinstance(v, float) else f"  {k:30s}: {v}")
 
+    if args.tier >= 3:
+        print("\n--- Tier 3: Realism Metrics ---")
+        from lilly.evaluation.realism import compute_realism_score, check_style_consistency
+
+        t3 = compute_realism_score(model, test_ds, model_cfg, n_samples=args.n_samples)
+        style = check_style_consistency(model, model_cfg)
+        t3.update(style)
+        metrics["tier3"] = t3
+        for k, v in sorted(t3.items()):
+            print(f"  {k:30s}: {v:.4f}" if isinstance(v, float) else f"  {k:30s}: {v}")
+
+    if args.visualize:
+        print("\n--- Generating Visualizations ---")
+        from lilly.evaluation.visualization import plot_action_confusion, plot_mdn_components
+
+        # Collect predictions for visualization
+        all_true_actions = []
+        all_pred_actions = []
+        all_real_ikis = []
+
+        for batch_inputs, batch_labels in test_ds:
+            outputs = model(batch_inputs, training=False)
+            mask = batch_labels["label_mask"].numpy()
+            action_probs = outputs["action_probs"].numpy()
+            pred_actions = np.argmax(action_probs, axis=-1)
+            true_actions = batch_labels["action_labels"].numpy()
+            delays = batch_labels["delay_labels"].numpy()
+
+            for b in range(len(mask)):
+                for t in range(mask.shape[1]):
+                    if mask[b, t] > 0:
+                        all_true_actions.append(true_actions[b, t])
+                        all_pred_actions.append(pred_actions[b, t])
+                        all_real_ikis.append(delays[b, t])
+
+        all_true_actions = np.array(all_true_actions)
+        all_pred_actions = np.array(all_pred_actions)
+        all_real_ikis = np.array(all_real_ikis)
+
+        plot_action_confusion(
+            all_pred_actions, all_true_actions,
+            output_dir / "action_confusion.png",
+        )
+        plot_mdn_components(model, output_dir / "mdn_components.png")
+        print("Visualizations saved.")
+
+    # Save metrics
     metrics_path = output_dir / "eval_metrics.json"
     with open(metrics_path, "w") as f:
-        json.dump({k: v for k, v in metrics.items() if not k.startswith("_")}, f, indent=2)
-
-    plot_timing_distribution(pred_timing, true_iki_log, output_dir / "timing_dist.png")
-    plot_action_confusion(pred_action, true_action, output_dir / "action_confusion.png")
-    print("\nDone.")
-
-
-def _evaluate_v2(args):
-    import json
-    from lilly.core.config import V2_SEGMENT_DIR, V2ModelConfig, V2TrainConfig
-    from lilly.data.pipeline import build_v2_datasets
-    from lilly.evaluation.evaluator import teacher_forced_metrics, reconstruction_metrics
-    from lilly.inference.preview import load_v2_model
-
-    data_dir = args.data_dir or V2_SEGMENT_DIR
-    model_cfg = V2ModelConfig()
-    train_cfg = V2TrainConfig()
-
-    print("Loading model...")
-    model = load_v2_model(args.model_path)
-
-    print("Loading data...")
-    _, _, test_ds, n_total = build_v2_datasets(data_dir, model_cfg, train_cfg, max_files=args.max_files)
-
-    print("\nTeacher-forced evaluation...")
-    tf_metrics = teacher_forced_metrics(model, test_ds, train_cfg)
-    for k, v in tf_metrics.items():
-        print(f"  {k}: {v:.4f}")
-
-    print(f"\nAutoregressive reconstruction ({args.recon_samples} samples)...")
-    recon = reconstruction_metrics(model, test_ds, model_cfg, n_samples=args.recon_samples)
-    for k, v in recon.items():
-        if isinstance(v, float):
-            print(f"  {k}: {v:.4f}")
-        else:
-            print(f"  {k}: {v}")
-
-    out_path = args.model_path.parent / "eval_metrics.json"
-    all_metrics = {"teacher_forced": tf_metrics, "reconstruction": recon}
-    with open(out_path, "w") as f:
-        json.dump(all_metrics, f, indent=2)
-    print(f"\nMetrics saved to: {out_path}")
+        json.dump(metrics, f, indent=2)
+    print(f"\nMetrics saved to: {metrics_path}")
+    print("Done.")
 
 
 if __name__ == "__main__":
