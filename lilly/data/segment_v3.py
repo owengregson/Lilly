@@ -2,30 +2,26 @@
 
 Reads preprocessed Parquet chunks, groups by session, computes style vectors,
 splits at pause boundaries, and saves V3 segment dicts as .npz files.
+
+Pure library module — no prints, no CLI. Scripts own the UI layer.
 """
 
 from __future__ import annotations
 
-import argparse
-import sys
 from pathlib import Path
 from typing import List
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from lilly.core.config import (
     MAX_SEGMENT_KEYSTROKES,
     MAX_TARGET_CHARS,
     MIN_SEGMENT_KEYSTROKES,
     PAUSE_THRESHOLD_MS,
-    PROCESSED_DIR,
-    STYLE_DIM,
-    V3_SEGMENT_DIR,
 )
 from lilly.core.encoding import char_to_id
-from lilly.data.style import StyleNormalizer, compute_style_vector
+from lilly.data.style import compute_style_vector
 
 
 def extract_v3_segments(
@@ -203,10 +199,14 @@ def process_chunk(parquet_path: Path, output_dir: Path) -> int:
     all_segments = []
 
     for session_id, session_df in df.groupby("session_id"):
-        session_df = session_df.sort_values("keystroke_index").reset_index(drop=True)
+        session_df = session_df.sort_values("keystroke_idx").reset_index(drop=True)
         style_vec = compute_style_vector(session_df)
 
-        target = session_df["target_sentence"].iloc[0] if "target_sentence" in session_df.columns else ""
+        target = (
+            session_df["target_sentence"].iloc[0]
+            if "target_sentence" in session_df.columns
+            else ""
+        )
         segments = extract_v3_segments(session_df, style_vec, target)
         all_segments.extend(segments)
 
@@ -226,32 +226,3 @@ def process_chunk(parquet_path: Path, output_dir: Path) -> int:
     return len(all_segments)
 
 
-def main():
-    """CLI entrypoint for V3 segmentation."""
-    parser = argparse.ArgumentParser(description="Prepare V3 training segments")
-    parser.add_argument("--input-dir", type=Path, default=PROCESSED_DIR)
-    parser.add_argument("--output-dir", type=Path, default=V3_SEGMENT_DIR)
-    parser.add_argument("--max-files", type=int, default=0)
-    args = parser.parse_args()
-
-    parquet_files = sorted(args.input_dir.glob("*.parquet"))
-    if args.max_files > 0:
-        parquet_files = parquet_files[:args.max_files]
-
-    if not parquet_files:
-        print(f"No Parquet files found in {args.input_dir}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Processing {len(parquet_files)} Parquet chunks...")
-    total_segments = 0
-
-    for pf in tqdm(parquet_files, desc="Chunks"):
-        n = process_chunk(pf, args.output_dir)
-        total_segments += n
-
-    print(f"\nTotal segments: {total_segments:,}")
-    print(f"Output: {args.output_dir}")
-
-
-if __name__ == "__main__":
-    main()

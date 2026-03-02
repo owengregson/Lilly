@@ -2,6 +2,8 @@
 
 Implements the full training pipeline: model construction, optimizer setup,
 training/validation steps, checkpointing, early stopping, and logging.
+
+Pure library module — no prints. Scripts own the UI layer.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Callable, Optional
 
 import numpy as np
 import tensorflow as tf
@@ -81,10 +84,21 @@ def train(
     train_cfg: V3TrainConfig | None = None,
     run_name: str | None = None,
     max_files: int = 0,
-) -> Path:
+    progress_callback: Optional[Callable] = None,
+) -> tuple[Path, dict]:
     """Train the V3 model.
 
-    Returns the path to the run directory.
+    Args:
+        data_dir: Directory containing V3 segment .npz files.
+        model_dir: Parent directory for run output.
+        model_cfg: Model configuration.
+        train_cfg: Training configuration.
+        run_name: Name for this training run.
+        max_files: Max segment files to load (0 = all).
+        progress_callback: Called with (epoch, train_loss, val_loss, acc, lr, time_s).
+
+    Returns:
+        (run_dir, metadata_dict)
     """
     if model_cfg is None:
         model_cfg = V3ModelConfig()
@@ -97,19 +111,13 @@ def train(
     run_dir = model_dir / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    print("=" * 60)
-    print(f"V3 Training: {run_name}")
-    print("=" * 60)
-
     # Build datasets
     train_ds, val_ds, test_ds, n_total = build_v3_datasets(
         data_dir, model_cfg, train_cfg, max_files=max_files,
     )
 
     # Build model
-    print("\nBuilding model...")
     model = build_model(model_cfg)
-    model.summary()
 
     # Compute total steps for LR schedule
     steps_per_epoch = max(1, n_total // train_cfg.batch_size)
@@ -151,11 +159,7 @@ def train(
 
     best_val_loss = float("inf")
     patience_counter = 0
-
-    print(f"\nStarting training for {train_cfg.epochs} epochs...")
-    print(f"  Steps per epoch: ~{steps_per_epoch}")
-    print(f"  Total steps: ~{total_steps}")
-    print()
+    epoch = 0
 
     for epoch in range(1, train_cfg.epochs + 1):
         epoch_start = time.time()
@@ -202,14 +206,11 @@ def train(
         val_loss = np.mean(val_losses["total"])
         current_lr = float(lr_schedule(optimizer.iterations))
 
-        print(
-            f"Epoch {epoch:3d}/{train_cfg.epochs} "
-            f"| train_loss={train_loss:.4f} "
-            f"| val_loss={val_loss:.4f} "
-            f"| acc={np.mean(train_accs):.3f}/{np.mean(val_accs):.3f} "
-            f"| lr={current_lr:.2e} "
-            f"| {epoch_time:.1f}s"
-        )
+        if progress_callback:
+            progress_callback(
+                epoch, float(train_loss), float(val_loss),
+                float(np.mean(train_accs)), current_lr, epoch_time,
+            )
 
         # Log to CSV
         csv_writer.writerow([
@@ -239,12 +240,9 @@ def train(
             patience_counter = 0
             best_path = run_dir / "best_model.keras"
             model.save(str(best_path))
-            print(f"  -> Saved best model (val_loss={val_loss:.4f})")
         else:
             patience_counter += 1
             if patience_counter >= train_cfg.early_stop_patience:
-                patience = train_cfg.early_stop_patience
-                print(f"\nEarly stopping at epoch {epoch} (patience={patience})")
                 break
 
     csv_file.close()
@@ -267,5 +265,4 @@ def train(
     with open(run_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\nTraining complete. Run dir: {run_dir}")
-    return run_dir
+    return run_dir, metadata

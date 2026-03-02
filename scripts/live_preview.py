@@ -20,21 +20,13 @@ from tensorflow import keras  # noqa: E402
 
 tf.get_logger().setLevel("ERROR")
 
-# ANSI escape codes
-BOLD = "\033[1m"
-DIM = "\033[2m"
-YELLOW = "\033[33m"
-GREEN = "\033[32m"
-RED = "\033[31m"
-RESET = "\033[0m"
-CURSOR_HIDE = "\033[?25l"
-CURSOR_SHOW = "\033[?25h"
+from lilly.cli.ui import Term as t  # noqa: E402
 
 
 def play_keystrokes(keystrokes, text: str, speed: float = 1.0) -> None:
     """Render keystrokes in real-time in the terminal."""
-    sys.stdout.write(CURSOR_HIDE)
-    sys.stdout.write(f"\n{DIM}Target: {text!r}{RESET}\n\n")
+    sys.stdout.write(t.CURSOR_HIDE)
+    sys.stdout.write(f"\n{t.DIM}Target: {text!r}{t.RESET}\n\n")
     sys.stdout.flush()
 
     buffer = []
@@ -46,7 +38,7 @@ def play_keystrokes(keystrokes, text: str, speed: float = 1.0) -> None:
             sys.stdout.write(ks.key)
             buffer.append(ks.key)
         elif ks.action == 1:  # error
-            sys.stdout.write(f"{RED}{ks.key}{RESET}")
+            sys.stdout.write(f"{t.RED}{ks.key}{t.RESET}")
             buffer.append(ks.key)
         elif ks.action == 2:  # backspace
             if buffer:
@@ -61,12 +53,12 @@ def play_keystrokes(keystrokes, text: str, speed: float = 1.0) -> None:
     n_backspace = sum(1 for ks in keystrokes if ks.action == 2)
     actual_wpm = (len(text) / 5.0) / max(total_ms / 60000.0, 0.001) if total_ms > 0 else 0
 
-    sys.stdout.write(f"\n\n{DIM}---{RESET}\n")
+    sys.stdout.write(f"\n\n{t.DIM}---{t.RESET}\n")
     sys.stdout.write(
-        f"{DIM}{total_ms:.0f}ms | {actual_wpm:.0f} WPM | "
-        f"{n_errors} errors | {n_backspace} backspaces{RESET}\n"
+        f"{t.DIM}{total_ms:.0f}ms | {actual_wpm:.0f} WPM | "
+        f"{n_errors} errors | {n_backspace} backspaces{t.RESET}\n"
     )
-    sys.stdout.write(CURSOR_SHOW)
+    sys.stdout.write(t.CURSOR_SHOW)
     sys.stdout.flush()
 
 
@@ -104,7 +96,7 @@ def main():
             sys.exit(1)
         model_path = candidates[-1]
 
-    print(f"{DIM}Loading model: {model_path}{RESET}")
+    print(f"{t.DIM}Loading model: {model_path}{t.RESET}")
     model = keras.models.load_model(
         str(model_path), compile=False,
         custom_objects=get_v3_custom_objects(),
@@ -128,7 +120,7 @@ def main():
             if args.text:
                 text = args.text
             else:
-                print(f"\n{BOLD}Enter text to type{RESET} {DIM}(Ctrl+C to quit):{RESET}")
+                print(f"\n{t.BOLD}Enter text to type{t.RESET} {t.DIM}(Ctrl+C to quit):{t.RESET}")
                 try:
                     text = input("> ").strip()
                 except EOFError:
@@ -138,7 +130,7 @@ def main():
 
             text = "".join(ch for ch in text if 32 <= ord(ch) <= 126)
             if not text:
-                print(f"{YELLOW}No valid characters.{RESET}")
+                print(f"{t.YELLOW}No valid characters.{t.RESET}")
                 if args.text:
                     break
                 continue
@@ -153,8 +145,8 @@ def main():
             if args.text:
                 break
     except KeyboardInterrupt:
-        sys.stdout.write(CURSOR_SHOW)
-        print(f"\n\n{DIM}Interrupted.{RESET}\n")
+        sys.stdout.write(t.CURSOR_SHOW)
+        print(f"\n\n{t.DIM}Interrupted.{t.RESET}\n")
 
 
 if __name__ == "__main__":

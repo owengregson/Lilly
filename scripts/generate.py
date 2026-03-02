@@ -13,6 +13,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
+from lilly.cli.ui import BannerAnimator, ProgressUI, print_banner, t
+
 
 def main():
     parser = argparse.ArgumentParser(description="Generate V3 typing sequence")
@@ -52,11 +54,24 @@ def main():
 
     cfg = V3ModelConfig()
 
-    print(f"Loading model: {args.model_path}")
+    print_banner()
+
+    animator = BannerAnimator()
+    ui = ProgressUI(3, animator)
+    animator.start()
+
+    # Step 1: Load model
+    label = "Loading model"
+    ui.begin(label)
     model = keras.models.load_model(
         str(args.model_path), compile=False,
         custom_objects=get_v3_custom_objects(),
     )
+    ui.done(label, str(args.model_path.name))
+
+    # Step 2: Generate
+    label = "Generating sequence"
+    ui.begin(label)
 
     # Build style vector from WPM and error rate
     style = np.zeros(cfg.style_dim, dtype=np.float32)
@@ -71,16 +86,24 @@ def main():
         "char": args.char_temp,
     }
 
-    print(f"Target: {text!r}")
-    print(f"Style: WPM={args.wpm}, error_rate={args.error_rate}")
-    print(f"Temperatures: {temperatures}")
-    print()
-
+    ui.update(f"Generating {len(text)} characters...")
     keystrokes = generate_v3_full(
         model, text, style, cfg,
         temperatures=temperatures,
         seed=args.seed,
     )
+    ui.done(label, f"{len(keystrokes)} keystrokes")
+
+    # Step 3: Results
+    label = "Results"
+    ui.begin(label)
+    ui.done(label)
+
+    animator.stop()
+    ui.finish()
+
+    # Print sequence after UI finishes
+    print()
     print_v3_sequence(keystrokes, text)
 
     # Summary stats
@@ -90,13 +113,14 @@ def main():
         n_errors = sum(1 for ks in keystrokes if ks.action == 1)
         n_backspace = sum(1 for ks in keystrokes if ks.action == 2)
         actual_wpm = (len(text) / 5.0) / max(total_ms / 60000.0, 0.001)
-        print("\nSummary:")
-        print(f"  Total time: {total_ms:.0f}ms")
+        print(f"\n  {t.BOLD}Summary:{t.RESET}")
+        print(f"    Total time: {total_ms:.0f}ms")
         print(
-            f"  Keystrokes: {len(keystrokes)} "
+            f"    Keystrokes: {len(keystrokes)} "
             f"(correct={n_correct}, error={n_errors}, backspace={n_backspace})"
         )
-        print(f"  Actual WPM: {actual_wpm:.1f}")
+        print(f"    Actual WPM: {actual_wpm:.1f}")
+        print()
 
 
 if __name__ == "__main__":
