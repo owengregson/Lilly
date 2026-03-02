@@ -31,3 +31,33 @@ def weighted_sample_logits(logits: np.ndarray, temperature: float = 1.0) -> int:
     probs = np.exp(logits - np.max(logits))
     probs = probs / np.sum(probs)
     return int(np.random.choice(len(probs), p=probs))
+
+
+def sample_mdn(
+    pi: np.ndarray, mu: np.ndarray, log_sigma: np.ndarray,
+    temperature: float = 1.0,
+) -> tuple[float, int]:
+    """Sample from an MDN mixture distribution.
+
+    Args:
+        pi: (K,) mixture weights
+        mu: (K,) component means (log-space)
+        log_sigma: (K,) component log-std
+        temperature: scaling for mixture weights and sigma
+
+    Returns:
+        (delay_ms, component_index)
+    """
+    # Apply temperature to mixture weights
+    if temperature != 1.0:
+        log_pi = np.log(pi + 1e-10) / temperature
+        pi = np.exp(log_pi - np.max(log_pi))
+        pi = pi / np.sum(pi)
+
+    k = int(np.random.choice(len(pi), p=pi))
+    sigma = math.exp(np.clip(log_sigma[k], -5.0, 5.0))
+    if temperature != 1.0:
+        sigma *= temperature
+    z = np.random.normal(mu[k], sigma)
+    delay_ms = float(np.clip(np.exp(z), MIN_IKI_MS, MAX_IKI_MS))
+    return delay_ms, k
