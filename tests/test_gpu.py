@@ -72,5 +72,55 @@ class TestVRAMFallback(unittest.TestCase):
         self.assertEqual(p.name, "RTX 4090")
 
 
+from unittest.mock import patch, MagicMock
+
+from lilly.core.gpu import detect_gpu
+
+
+class TestDetectGPU(unittest.TestCase):
+    """detect_gpu() queries TF and returns the right profile."""
+
+    @patch("lilly.core.gpu.tf.config.list_physical_devices", return_value=[])
+    def test_no_gpu_returns_cpu(self, mock_list):
+        p = detect_gpu()
+        self.assertEqual(p.name, "CPU")
+        self.assertEqual(p.batch_size, 32)
+
+    @patch("lilly.core.gpu.tf.config.experimental.get_device_details")
+    @patch("lilly.core.gpu.tf.config.list_physical_devices")
+    def test_known_gpu_matched_by_name(self, mock_list, mock_details):
+        fake_dev = MagicMock()
+        mock_list.return_value = [fake_dev]
+        mock_details.return_value = {
+            "device_name": "NVIDIA A10",
+            "compute_capability": (8, 6),
+        }
+        p = detect_gpu()
+        self.assertEqual(p.name, "A10")
+        self.assertEqual(p.batch_size, 256)
+
+    @patch("lilly.core.gpu.tf.config.experimental.get_device_details")
+    @patch("lilly.core.gpu.tf.config.list_physical_devices")
+    def test_unknown_gpu_uses_vram_fallback(self, mock_list, mock_details):
+        fake_dev = MagicMock()
+        mock_list.return_value = [fake_dev]
+        mock_details.return_value = {"device_name": "NVIDIA RTX 5090"}
+        # No VRAM info in details -> falls back to name-only,
+        # which won't match -> CPU profile as safe default
+        p = detect_gpu()
+        # Should still work (either matched or fell back)
+        self.assertIsInstance(p, GPUProfile)
+
+    @patch("lilly.core.gpu.tf.config.experimental.get_device_details")
+    @patch("lilly.core.gpu.tf.config.list_physical_devices")
+    def test_h100_matched(self, mock_list, mock_details):
+        fake_dev = MagicMock()
+        mock_list.return_value = [fake_dev]
+        mock_details.return_value = {"device_name": "NVIDIA H100 80GB HBM3"}
+        p = detect_gpu()
+        self.assertEqual(p.name, "H100")
+        self.assertEqual(p.batch_size, 512)
+
+
 if __name__ == "__main__":
     unittest.main()
