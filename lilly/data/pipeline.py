@@ -190,7 +190,8 @@ def build_v3_datasets(
                 seed=train_cfg.seed,
             )
         ds = ds.batch(train_cfg.batch_size)
-        ds = ds.prefetch(tf.data.AUTOTUNE)
+        prefetch = tf.data.AUTOTUNE if train_cfg.prefetch_buffer == 0 else train_cfg.prefetch_buffer
+        ds = ds.prefetch(prefetch)
         return ds
 
     return (

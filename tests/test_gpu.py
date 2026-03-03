@@ -168,5 +168,29 @@ class TestAutoTuneConfig(unittest.TestCase):
         self.assertEqual(tuned.prefetch_buffer, 16)  # from H100 profile
 
 
+try:
+    import tensorflow as _tf
+    _has_tf = True
+except ImportError:
+    _has_tf = False
+
+
+@unittest.skipUnless(_has_tf, "TensorFlow not installed")
+class TestPrefetchBufferConfig(unittest.TestCase):
+    """V3TrainConfig.prefetch_buffer=0 means AUTOTUNE, >0 means literal."""
+
+    def test_zero_means_autotune(self):
+        import tensorflow as tf
+        cfg = V3TrainConfig(prefetch_buffer=0)
+        effective = tf.data.AUTOTUNE if cfg.prefetch_buffer == 0 else cfg.prefetch_buffer
+        self.assertEqual(effective, tf.data.AUTOTUNE)
+
+    def test_nonzero_is_literal(self):
+        import tensorflow as tf
+        cfg = V3TrainConfig(prefetch_buffer=8)
+        effective = tf.data.AUTOTUNE if cfg.prefetch_buffer == 0 else cfg.prefetch_buffer
+        self.assertEqual(effective, 8)
+
+
 if __name__ == "__main__":
     unittest.main()
