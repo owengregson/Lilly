@@ -52,3 +52,19 @@ GPU_PROFILES: dict[str, GPUProfile] = {
         shuffle_buffer=200_000, prefetch_buffer=16,
     ),
 }
+
+
+def _profile_from_vram(name: str, vram_gb: float) -> GPUProfile:
+    """Create a profile for an unknown GPU based on its VRAM."""
+    if vram_gb < 8:
+        base = CPU_PROFILE
+    elif vram_gb < 20:
+        base = GPU_PROFILES["T4"]
+    elif vram_gb < 35:
+        base = GPU_PROFILES["A10"]
+    else:
+        base = GPU_PROFILES["A100-80"]
+    return GPUProfile(
+        name=name, vram_gb=vram_gb, batch_size=base.batch_size,
+        shuffle_buffer=base.shuffle_buffer, prefetch_buffer=base.prefetch_buffer,
+    )

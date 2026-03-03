@@ -45,5 +45,32 @@ class TestGPUProfile(unittest.TestCase):
         self.assertEqual(p.shuffle_buffer, 200_000)
 
 
+from lilly.core.gpu import _profile_from_vram
+
+
+class TestVRAMFallback(unittest.TestCase):
+    """VRAM-based fallback for unknown GPUs."""
+
+    def test_low_vram_gets_cpu_profile(self):
+        p = _profile_from_vram("Unknown GPU", 4.0)
+        self.assertEqual(p.batch_size, 32)  # CPU tier
+
+    def test_medium_vram_gets_t4_profile(self):
+        p = _profile_from_vram("Unknown GPU", 12.0)
+        self.assertEqual(p.batch_size, 128)  # T4 tier
+
+    def test_large_vram_gets_a10_profile(self):
+        p = _profile_from_vram("Unknown GPU", 24.0)
+        self.assertEqual(p.batch_size, 256)  # A10 tier
+
+    def test_very_large_vram_gets_a100_profile(self):
+        p = _profile_from_vram("Unknown GPU", 48.0)
+        self.assertEqual(p.batch_size, 512)  # A100 tier
+
+    def test_preserves_gpu_name(self):
+        p = _profile_from_vram("RTX 4090", 24.0)
+        self.assertEqual(p.name, "RTX 4090")
+
+
 if __name__ == "__main__":
     unittest.main()
