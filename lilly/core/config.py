@@ -131,3 +131,4 @@ class V3TrainConfig:
     shuffle_buffer: int = 100_000
     seed: int = 42
     max_samples: int = 0
+    prefetch_buffer: int = 0  # 0 = tf.data.AUTOTUNE
