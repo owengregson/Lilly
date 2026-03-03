@@ -15,7 +15,6 @@ import pandas as pd
 
 from lilly.core.config import (
     ACTION_BACKSPACE,
-    ACTION_CORRECT,
     ACTION_ERROR,
     PAUSE_THRESHOLD_MS,
     STYLE_DIM,

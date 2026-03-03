@@ -70,8 +70,10 @@ class TestMDNMixtureLoss:
 
 class TestCombinedV3Loss:
     def test_runs_without_error(self):
+        from lilly.core.config import V3ModelConfig
         from lilly.training.losses import V3LossConfig, compute_v3_loss
         cfg = V3LossConfig()
+        model_cfg = V3ModelConfig()
         outputs = {
             "action_probs": tf.constant([[[0.8, 0.1, 0.1], [0.7, 0.2, 0.1]]]),
             "timing_correct": (
@@ -84,13 +86,15 @@ class TestCombinedV3Loss:
                 tf.constant([[[1.0]]]), tf.constant([[[4.0]]]), tf.constant([[[0.0]]])
             ),
             "error_char_logits": tf.random.normal((1, 2, 97)),
-            "position_pred": tf.constant([[[0.3], [0.6]]]),
+            # position_pred shape: (B, T, max_encoder_len) for Sparse CE
+            "position_pred": tf.random.normal((1, 2, model_cfg.max_encoder_len)),
         }
         labels = {
             "action_labels": tf.constant([[0, 1]]),
             "delay_labels": tf.constant([[4.5, 4.0]]),
             "error_char_labels": tf.constant([[0, 50]]),
-            "position_labels": tf.constant([[0.25, 0.5]]),
+            # position_labels: integer indices into encoder
+            "position_labels": tf.constant([[0, 5]], dtype=tf.int32),
             "label_mask": tf.constant([[1.0, 1.0]]),
         }
         total, components = compute_v3_loss(outputs, labels, cfg)

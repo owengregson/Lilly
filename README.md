@@ -7,8 +7,7 @@
 </picture>
 
 <br>
-
-**A State-of-the-Art Generative Model for Human Typing Behavior**
+<h3>A State-of-the-Art Generative Model for Human Typing Behavior</h3>
 
 <p>
 Lilly is a novel deep learning model that generates indistinguishable-from-human keystroke sequences<br>
