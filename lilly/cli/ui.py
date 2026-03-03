@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import colorsys
 import functools
+import multiprocessing as mp
 import os
 import platform
 import subprocess
 import sys
-import multiprocessing as mp
 from collections import Counter
 
 # ── Terminal Abstraction ──────────────────────────────────────────────────

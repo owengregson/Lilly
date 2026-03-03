@@ -134,6 +134,8 @@ def generate_v3_segment(
                 outputs["timing_correct"][2][0, step].numpy(),
             )
             delay_ms, mdn_k = sample_mdn(pi, mu, log_sigma, temps["timing"])
+            # Capture target_char BEFORE advancing position
+            target_ch = char
             position += 1
 
         elif action == 1:  # ERROR
@@ -147,6 +149,8 @@ def generate_v3_segment(
                 outputs["timing_error"][2][0, step].numpy(),
             )
             delay_ms, mdn_k = sample_mdn(pi, mu, log_sigma, temps["timing"])
+            # target_ch is the character that SHOULD have been typed
+            target_ch = target_text[min(position, len(target_text) - 1)] if target_text else ""
             # Position doesn't advance on error
 
         else:  # BACKSPACE
@@ -158,12 +162,12 @@ def generate_v3_segment(
                 outputs["timing_backspace"][2][0, step].numpy(),
             )
             delay_ms, mdn_k = sample_mdn(pi, mu, log_sigma, temps["timing"])
+            target_ch = target_text[min(position, len(target_text) - 1)] if target_text else ""
             # Adjust position backward if possible
             if position > 0:
                 position -= 1
 
         cumulative_ms += delay_ms
-        target_ch = target_text[min(position, len(target_text) - 1)] if target_text else ""
 
         keystrokes.append(GeneratedKeystroke(
             key=char,

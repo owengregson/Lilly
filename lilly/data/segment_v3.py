@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 
 from lilly.core.config import (
+    ACTION_CORRECT,
+    CONTEXT_TAIL_LEN,
     MAX_SEGMENT_KEYSTROKES,
     MAX_TARGET_CHARS,
     MIN_SEGMENT_KEYSTROKES,
@@ -57,9 +59,9 @@ def extract_v3_segments(
         groups.append(current)
 
     segments = []
-    prev_context_chars = [0] * 4
-    prev_context_actions = [0] * 4
-    prev_context_delays = [0.0] * 4
+    prev_context_chars = [0] * CONTEXT_TAIL_LEN
+    prev_context_actions = [0] * CONTEXT_TAIL_LEN
+    prev_context_delays = [0.0] * CONTEXT_TAIL_LEN
 
     for group in groups:
         # Split long groups
@@ -68,7 +70,7 @@ def extract_v3_segments(
             if len(sub_group) < MIN_SEGMENT_KEYSTROKES:
                 # Still update context
                 if sub_group:
-                    tail = sub_group[-4:]
+                    tail = sub_group[-CONTEXT_TAIL_LEN:]
                     prev_context_chars = [char_to_id(ks["typed_key"]) for ks in tail]
                     prev_context_actions = [int(ks["action"]) for ks in tail]
                     prev_context_delays = [float(ks["iki"]) for ks in tail]
@@ -82,7 +84,7 @@ def extract_v3_segments(
                 segments.append(seg)
 
             # Update context from tail of this group
-            tail = sub_group[-4:]
+            tail = sub_group[-CONTEXT_TAIL_LEN:]
             prev_context_chars = [char_to_id(ks["typed_key"]) for ks in tail]
             prev_context_actions = [int(ks["action"]) for ks in tail]
             prev_context_delays = [float(ks["iki"]) for ks in tail]
@@ -123,16 +125,22 @@ def _build_segment_dict(
 
     dec_len = min(n, MAX_SEGMENT_KEYSTROKES)
 
-    # Context arrays (padded to 4)
-    ctx_chars = np.zeros(4, dtype=np.int32)
-    ctx_actions = np.zeros(4, dtype=np.int32)
-    ctx_delays = np.zeros(4, dtype=np.float32)
-    for i, v in enumerate(prev_chars[-4:]):
-        ctx_chars[4 - len(prev_chars[-4:]) + i] = v
-    for i, v in enumerate(prev_actions[-4:]):
-        ctx_actions[4 - len(prev_actions[-4:]) + i] = v
-    for i, v in enumerate(prev_delays[-4:]):
-        ctx_delays[4 - len(prev_delays[-4:]) + i] = v
+    # Context arrays (padded to CONTEXT_TAIL_LEN)
+    ctx_chars = np.zeros(CONTEXT_TAIL_LEN, dtype=np.int32)
+    ctx_actions = np.zeros(CONTEXT_TAIL_LEN, dtype=np.int32)
+    ctx_delays = np.zeros(CONTEXT_TAIL_LEN, dtype=np.float32)
+    tail_chars = prev_chars[-CONTEXT_TAIL_LEN:]
+    tail_actions = prev_actions[-CONTEXT_TAIL_LEN:]
+    tail_delays = prev_delays[-CONTEXT_TAIL_LEN:]
+    offset = CONTEXT_TAIL_LEN - len(tail_chars)
+    for i, v in enumerate(tail_chars):
+        ctx_chars[offset + i] = v
+    offset = CONTEXT_TAIL_LEN - len(tail_actions)
+    for i, v in enumerate(tail_actions):
+        ctx_actions[offset + i] = v
+    offset = CONTEXT_TAIL_LEN - len(tail_delays)
+    for i, v in enumerate(tail_delays):
+        ctx_delays[offset + i] = v
 
     return {
         "encoder_chars": enc_chars,
@@ -154,7 +162,7 @@ def _compute_target_text(keystrokes: List[dict], sentence: str) -> str:
     max_pos = None
     for ks in keystrokes:
         pos = ks.get("target_pos", 0)
-        if ks["action"] == 0:  # CORRECT
+        if ks["action"] == ACTION_CORRECT:
             if min_pos is None or pos < min_pos:
                 min_pos = pos
             if max_pos is None or pos > max_pos:

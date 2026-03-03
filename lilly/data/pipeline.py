@@ -15,7 +15,6 @@ from lilly.core.config import (
     V3TrainConfig,
 )
 
-
 # ---------------------------------------------------------------------------
 # V3 Pipeline
 # ---------------------------------------------------------------------------
@@ -30,9 +29,9 @@ def load_v3_segment_files(data_dir: Path, max_files: int = 0) -> dict:
 
     arrays = {}
     for f in files:
-        data = np.load(f)
-        for key in data.files:
-            arrays.setdefault(key, []).append(data[key])
+        with np.load(f) as data:
+            for key in data.files:
+                arrays.setdefault(key, []).append(data[key])
 
     return {k: np.concatenate(v) for k, v in arrays.items()}
 
@@ -42,6 +41,7 @@ def _prepare_v3_decoder_io(
     decoder_delays: np.ndarray,
     decoder_actions: np.ndarray,
     decoder_lengths: np.ndarray,
+    encoder_lengths: np.ndarray,
     max_len: int,
 ) -> dict:
     """Prepare teacher-forced decoder inputs and labels for V3.
@@ -68,8 +68,8 @@ def _prepare_v3_decoder_io(
     # Error char labels (the char that was typed for ERROR actions)
     dec_error_char_labels = np.zeros((n, input_len), dtype=np.int32)
 
-    # Position labels (normalized position in target sentence)
-    dec_position_labels = np.zeros((n, input_len), dtype=np.float32)
+    # Position labels (integer index into encoder, for Sparse CE)
+    dec_position_labels = np.zeros((n, input_len), dtype=np.int32)
 
     for i in range(n):
         length = int(decoder_lengths[i])
@@ -94,10 +94,11 @@ def _prepare_v3_decoder_io(
             if decoder_actions[i, j] == 1:  # ERROR
                 dec_error_char_labels[i, j] = decoder_chars[i, j]
 
-        # Position labels: simple linear ramp for now
-        # (real position tracking would need target_pos from preprocessing)
-        if length > 0:
-            positions = np.linspace(0.0, 1.0, length)
+        # Position labels: linear ramp of integer encoder indices
+        # Each decoder step maps to the approximate encoder position
+        enc_len = int(encoder_lengths[i]) if encoder_lengths is not None else 1
+        if length > 0 and enc_len > 0:
+            positions = np.linspace(0, max(enc_len - 1, 0), length).astype(np.int32)
             dec_position_labels[i, :length] = positions
 
     return {
@@ -141,6 +142,7 @@ def build_v3_datasets(
         arrays["decoder_delays"],
         arrays["decoder_actions"],
         arrays["decoder_lengths"],
+        arrays["encoder_lengths"],
         model_cfg.max_decoder_len,
     )
 
@@ -149,6 +151,11 @@ def build_v3_datasets(
     dec_in_delays_log[decoder_io["dec_input_delays"] == 0] = 0.0
     dec_lbl_delays_log = np.log(np.clip(decoder_io["dec_label_delays"], 1.0, 5000.0))
     dec_lbl_delays_log[decoder_io["dec_label_delays"] == 0] = 0.0
+
+    # Log-normalize context delays to match inference scale (log-ms, not raw ms)
+    ctx_delays_raw = arrays["prev_context_delays"]
+    ctx_delays_log = np.log(np.clip(ctx_delays_raw, 1.0, 5000.0))
+    ctx_delays_log[ctx_delays_raw == 0] = 0.0
 
     # Split
     n_test = int(n_total * train_cfg.test_split)
@@ -166,7 +173,7 @@ def build_v3_datasets(
             "style_vector": arrays["style_vector"][s],
             "prev_context_chars": arrays["prev_context_chars"][s],
             "prev_context_actions": arrays["prev_context_actions"][s],
-            "prev_context_delays": arrays["prev_context_delays"][s],
+            "prev_context_delays": ctx_delays_log[s],
         }
         labels = {
             "action_labels": decoder_io["dec_label_actions"][s],

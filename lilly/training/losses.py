@@ -61,13 +61,14 @@ def mdn_mixture_nll(y_true, pi, mu, log_sigma):
     Returns:
         (B, T) per-position NLL
     """
-    sigma = tf.exp(log_sigma)  # already clipped in MDNHead
+    # Consistent sigma: exp(clipped log_sigma) + epsilon
+    sigma = tf.exp(tf.clip_by_value(log_sigma, -5.0, 5.0)) + 1e-6
     y = y_true[:, :, tf.newaxis]  # (B, T, 1)
 
     # Log-probability of each component (Gaussian in log-space = LogNormal)
     log_probs = (
-        -0.5 * tf.square((y - mu) / (sigma + 1e-6))
-        - log_sigma
+        -0.5 * tf.square((y - mu) / sigma)
+        - tf.math.log(sigma)
         - 0.5 * math.log(2.0 * math.pi)
     )  # (B, T, K)
 
@@ -113,15 +114,21 @@ def compute_v3_loss(outputs, labels, cfg: V3LossConfig):
     # --- Error char loss (masked to action=ERROR) ---
     error_mask = tf.cast(tf.equal(action_labels, 1), tf.float32) * mask
     error_mask_sum = tf.maximum(tf.reduce_sum(error_mask), 1.0)
+    # Clamp labels to valid range [0, 96] to prevent OOB from START/END tokens
+    error_char_labels_safe = tf.clip_by_value(labels["error_char_labels"], 0, 96)
     error_ce = keras.losses.SparseCategoricalCrossentropy(
         from_logits=True, reduction="none"
-    )(labels["error_char_labels"], outputs["error_char_logits"])
+    )(error_char_labels_safe, outputs["error_char_logits"])
     error_char_loss = tf.reduce_sum(error_ce * error_mask) / error_mask_sum
 
-    # --- Position loss (auxiliary) ---
-    position_pred = tf.squeeze(outputs["position_pred"], axis=-1)  # (B, T)
-    position_mse = tf.square(position_pred - labels["position_labels"])
-    position_loss = tf.reduce_sum(position_mse * mask) / mask_sum
+    # --- Position loss (auxiliary, Sparse CE over encoder positions) ---
+    position_labels_int = tf.cast(labels["position_labels"], tf.int32)
+    max_enc = tf.shape(outputs["position_pred"])[-1]
+    position_labels_safe = tf.clip_by_value(position_labels_int, 0, max_enc - 1)
+    position_ce = keras.losses.SparseCategoricalCrossentropy(
+        from_logits=True, reduction="none"
+    )(position_labels_safe, outputs["position_pred"])
+    position_loss = tf.reduce_sum(position_ce * mask) / mask_sum
 
     # --- Combine ---
     total = (

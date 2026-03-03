@@ -31,7 +31,7 @@ def play_keystrokes(keystrokes, text: str, speed: float = 1.0) -> None:
 
     buffer = []
     for ks in keystrokes:
-        delay_s = (ks.delay_ms / 1000.0) * speed
+        delay_s = (ks.delay_ms / 1000.0) / speed
         time.sleep(max(delay_s, 0.001))
 
         if ks.action == 0:  # correct
@@ -72,7 +72,7 @@ def main():
     parser.add_argument("--timing-temp", type=float, default=0.8)
     parser.add_argument("--char-temp", type=float, default=0.8)
     parser.add_argument("--speed", type=float, default=1.0,
-                        help="Playback speed multiplier (0.5 = half speed)")
+                        help="Playback speed multiplier (2.0 = 2x faster)")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
@@ -107,7 +107,7 @@ def main():
     target_iki_ms = 60000.0 / (5.0 * max(args.wpm, 1.0))
     style[0] = float(np.log(max(target_iki_ms, 10.0)))
     style[1] = 0.5
-    style[4] = args.error_rate
+    style[6] = args.error_rate  # error_rate is dim 6 in style vector
 
     temperatures = {
         "action": args.action_temp,

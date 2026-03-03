@@ -6,9 +6,9 @@
   <img alt="Lilly" src="images/LillyLogoDesignV4SE2Light.svg" width="320">
 </picture>
 
-<br><br>
+<br>
 
-**A State-of-the-Art (SoTA) Generative Model for Human Typing Behavior**
+**A State-of-the-Art Generative Model for Human Typing Behavior**
 
 <p>
 Lilly is a novel deep learning model that generates indistinguishable-from-human keystroke sequences<br>

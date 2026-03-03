@@ -86,6 +86,7 @@ MIN_SEGMENT_KEYSTROKES = 3
 MAX_SEGMENT_KEYSTROKES = 80  # increased from 64
 MAX_TARGET_CHARS = 32
 STYLE_DIM = 16
+CONTEXT_TAIL_LEN = 4
 
 # ---------------------------------------------------------------------------
 # V3 Model & Training Config
@@ -108,7 +109,7 @@ class V3ModelConfig:
     mdn_components: int = 8
     num_actions: int = NUM_ACTIONS  # 3
     qwerty_bias_learnable: bool = True
-    context_tail_len: int = 4
+    context_tail_len: int = CONTEXT_TAIL_LEN
 
 
 @dataclass

@@ -48,8 +48,9 @@ def train_discriminator(
     X = np.array(all_seqs)
     y = np.array(all_labels, dtype=np.float32)
 
-    # Shuffle
-    perm = np.random.permutation(len(X))
+    # Shuffle with fixed seed for reproducibility
+    rng = np.random.default_rng(42)
+    perm = rng.permutation(len(X))
     X, y = X[perm], y[perm]
 
     # Split 80/20

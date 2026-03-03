@@ -18,9 +18,14 @@ def sample_lognormal(mu: float, log_sigma: float) -> float:
 
 def weighted_sample(probs: np.ndarray, temperature: float = 1.0) -> int:
     """Sample from a probability distribution with temperature."""
+    probs = np.asarray(probs, dtype=np.float64)
     if temperature != 1.0:
         logits = np.log(probs + 1e-10) / temperature
+        logits = logits - np.max(logits)  # numerical stability
         probs = np.exp(logits) / np.sum(np.exp(logits))
+    else:
+        # Renormalize to prevent float32 precision drift from softmax
+        probs = probs / probs.sum()
     return int(np.random.choice(len(probs), p=probs))
 
 
@@ -49,10 +54,11 @@ def sample_mdn(
         (delay_ms, component_index)
     """
     # Apply temperature to mixture weights
+    pi = np.asarray(pi, dtype=np.float64)
     if temperature != 1.0:
         log_pi = np.log(pi + 1e-10) / temperature
         pi = np.exp(log_pi - np.max(log_pi))
-        pi = pi / np.sum(pi)
+    pi = pi / np.sum(pi)  # always renormalize
 
     k = int(np.random.choice(len(pi), p=pi))
     sigma = math.exp(np.clip(log_sigma[k], -5.0, 5.0))

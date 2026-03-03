@@ -13,7 +13,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from lilly.core.config import PAUSE_THRESHOLD_MS, STYLE_DIM
+from lilly.core.config import (
+    ACTION_BACKSPACE,
+    ACTION_CORRECT,
+    ACTION_ERROR,
+    PAUSE_THRESHOLD_MS,
+    STYLE_DIM,
+)
 
 
 def compute_style_vector(df: pd.DataFrame) -> np.ndarray:
@@ -33,7 +39,10 @@ def compute_style_vector(df: pd.DataFrame) -> np.ndarray:
 
     ikis = df["iki"].values.astype(np.float64)
     actions = df["action"].values
-    hold_times = df["hold_time"].values.astype(np.float64) if "hold_time" in df.columns else np.zeros(len(df))
+    if "hold_time" in df.columns:
+        hold_times = df["hold_time"].values.astype(np.float64)
+    else:
+        hold_times = np.zeros(len(df))
     typed_keys = df["typed_key"].values
 
     # Clamp IKIs to valid range
@@ -49,11 +58,12 @@ def compute_style_vector(df: pd.DataFrame) -> np.ndarray:
     # dim 2: median_iki_log (robust central tendency)
     vec[2] = float(np.median(log_ikis))
 
-    # dim 3: iki_skewness
+    # dim 3: iki_skewness (clamped to [-10, 10] to prevent extreme values)
     if len(log_ikis) > 2 and np.std(log_ikis) > 1e-6:
         mean_val = np.mean(log_ikis)
         std_val = np.std(log_ikis)
-        vec[3] = float(np.mean(((log_ikis - mean_val) / std_val) ** 3))
+        skew = float(np.mean(((log_ikis - mean_val) / std_val) ** 3))
+        vec[3] = float(np.clip(skew, -10.0, 10.0))
     else:
         vec[3] = 0.0
 
@@ -65,17 +75,17 @@ def compute_style_vector(df: pd.DataFrame) -> np.ndarray:
 
     # dim 6: error_rate
     n_total = len(actions)
-    n_errors = np.sum(actions == 1)
+    n_errors = np.sum(actions == ACTION_ERROR)
     vec[6] = float(n_errors / max(n_total, 1))
 
     # dim 7: correction_rate (fraction of errors corrected within 3 keystrokes)
     if n_errors > 0:
         corrections = 0
         for i in range(len(actions)):
-            if actions[i] == 1:  # error
+            if actions[i] == ACTION_ERROR:
                 # Check if backspace follows within 3 keystrokes
                 for j in range(i + 1, min(i + 4, len(actions))):
-                    if actions[j] == 2:  # backspace
+                    if actions[j] == ACTION_BACKSPACE:
                         corrections += 1
                         break
         vec[7] = float(corrections / n_errors)
@@ -92,10 +102,11 @@ def compute_style_vector(df: pd.DataFrame) -> np.ndarray:
     n_pauses = np.sum(ikis > PAUSE_THRESHOLD_MS)
     vec[10] = float(n_pauses / max(n_total, 1))
 
-    # dim 11: mean_hold_time_log
-    hold_clipped = np.clip(hold_times, 5.0, 2000.0)
-    if np.any(hold_clipped > 0):
-        vec[11] = float(np.mean(np.log(hold_clipped[hold_clipped > 0])))
+    # dim 11: mean_hold_time_log (filter out missing/zero hold times before clipping)
+    valid_hold_mask = hold_times > 0
+    if np.any(valid_hold_mask):
+        hold_valid = np.clip(hold_times[valid_hold_mask], 5.0, 2000.0)
+        vec[11] = float(np.mean(np.log(hold_valid)))
 
     # dim 12: iki_autocorrelation (lag-1)
     if len(log_ikis) > 2:
@@ -113,7 +124,7 @@ def compute_style_vector(df: pd.DataFrame) -> np.ndarray:
 
     # dim 14: error_burst_rate (fraction of errors that are clustered)
     if n_errors > 1:
-        error_indices = np.where(actions == 1)[0]
+        error_indices = np.where(actions == ACTION_ERROR)[0]
         clustered = sum(1 for i in range(1, len(error_indices))
                        if error_indices[i] - error_indices[i-1] <= 3)
         vec[14] = float(clustered / len(error_indices))
@@ -150,11 +161,11 @@ def _compute_correction_latencies(actions: np.ndarray, ikis: np.ndarray) -> list
     """Compute error-to-backspace latencies."""
     latencies = []
     for i in range(len(actions)):
-        if actions[i] == 1:  # error
+        if actions[i] == ACTION_ERROR:
             cumulative = 0.0
             for j in range(i + 1, min(i + 4, len(actions))):
                 cumulative += ikis[j]
-                if actions[j] == 2:  # backspace
+                if actions[j] == ACTION_BACKSPACE:
                     latencies.append(cumulative)
                     break
     return latencies

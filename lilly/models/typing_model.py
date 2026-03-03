@@ -232,7 +232,9 @@ class TypingTransformerV3(keras.Model):
             learnable_alpha=cfg.qwerty_bias_learnable,
             name="error_char_head",
         )
-        self.position_head = keras.layers.Dense(1, name="position_pred")
+        self.position_head = keras.layers.Dense(
+            cfg.max_encoder_len, name="position_pred",
+        )
 
         # --- Dropout ---
         self.embed_dropout = keras.layers.Dropout(cfg.dropout)
@@ -247,6 +249,9 @@ class TypingTransformerV3(keras.Model):
 
     def _encode(self, encoder_chars, encoder_lengths, style_vector, training=False):
         """Encode target text with FiLM-conditioned transformer layers."""
+        # Ensure encoder_lengths is 1-D (B,) regardless of caller shape
+        encoder_lengths = tf.reshape(encoder_lengths, [-1])
+
         # Embed + project
         x = self.encoder_char_embed(encoder_chars)  # (B, S, char_embed_dim)
         x = self.encoder_proj(x)  # (B, S, d_model)

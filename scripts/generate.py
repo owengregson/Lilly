@@ -78,7 +78,7 @@ def main():
     target_iki_ms = 60000.0 / (5.0 * max(args.wpm, 1.0))
     style[0] = float(np.log(max(target_iki_ms, 10.0)))  # mean_iki_log
     style[1] = 0.5  # std_iki_log (moderate variance)
-    style[4] = args.error_rate  # error_rate
+    style[6] = args.error_rate  # error_rate (dim 6 in style vector)
 
     temperatures = {
         "action": args.action_temp,

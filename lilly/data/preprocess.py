@@ -13,7 +13,6 @@ Pure library module — no prints, no CLI. Scripts own the UI layer.
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -320,19 +319,7 @@ def validate_parquet(path: Path) -> bool:
 
 def find_keystroke_files(data_dir: Path) -> List[Path]:
     """Find all *_keystrokes.txt files recursively."""
-    files: List[Path] = []
-    for p in data_dir.rglob("*_keystrokes.txt"):
-        files.append(p)
-
-    if not files:
-        for subdir in data_dir.iterdir():
-            if subdir.is_dir():
-                for p in subdir.rglob("*_keystrokes.txt"):
-                    files.append(p)
-                if files:
-                    break
-
-    files.sort()
+    files = sorted(data_dir.rglob("*_keystrokes.txt"))
     return files
 
 

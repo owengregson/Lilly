@@ -141,12 +141,12 @@ def _extract_correction_latencies_from_actions(
 ) -> list[float]:
     """Find error->backspace delays."""
     latencies = []
-    for i in range(len(actions)):
+    n = min(len(actions), len(ikis_ms))
+    for i in range(n):
         if actions[i] == 1:  # error
             cumulative = 0.0
-            for j in range(i + 1, min(i + 4, len(actions))):
-                if j < len(ikis_ms):
-                    cumulative += ikis_ms[j]
+            for j in range(i + 1, min(i + 4, n)):
+                cumulative += ikis_ms[j]
                 if actions[j] == 2:  # backspace
                     latencies.append(cumulative)
                     break

@@ -35,16 +35,14 @@ def _compute_action_accuracy(outputs, labels):
 
 
 def _compute_timing_mae(outputs, labels):
-    """Compute masked timing MAE in ms (exp-space)."""
+    """Compute masked timing MAE in log-space."""
     mask = labels["label_mask"]
     # Use the correct-action MDN mean as prediction
-    _, mu, _ = outputs["timing_correct"]
-    # Take the most probable component
-    pi, _, _ = outputs["timing_correct"]
+    pi, mu, _ = outputs["timing_correct"]
+    # Select the most probable component's mu via one-hot gather
     best_k = tf.argmax(pi, axis=-1)  # (B, T)
-    # Gather the mu for the best component
-    pred_delay_log = tf.gather(mu, best_k[:, :, tf.newaxis], batch_dims=2)
-    pred_delay_log = tf.squeeze(pred_delay_log, axis=-1)
+    best_k_onehot = tf.one_hot(best_k, depth=tf.shape(mu)[-1])  # (B, T, K)
+    pred_delay_log = tf.reduce_sum(mu * best_k_onehot, axis=-1)  # (B, T)
     true_delay_log = labels["delay_labels"]
     mae_log = tf.abs(pred_delay_log - true_delay_log) * mask
     return tf.reduce_sum(mae_log) / tf.maximum(tf.reduce_sum(mask), 1.0)
@@ -161,115 +159,117 @@ def train(
 
     # CSV logger
     csv_path = run_dir / "training_log.csv"
-    csv_file = open(csv_path, "w", newline="")
-    csv_writer = csv.writer(csv_file)
-    csv_writer.writerow([
-        "epoch", "train_loss", "train_action", "train_timing",
-        "train_error_char", "train_position", "train_acc", "train_timing_mae",
-        "val_loss", "val_action", "val_timing",
-        "val_error_char", "val_position", "val_acc", "val_timing_mae",
-        "lr", "time_s",
-    ])
-
     best_val_loss = float("inf")
     patience_counter = 0
     epoch = 0
 
-    for epoch in range(1, train_cfg.epochs + 1):
-        epoch_start = time.time()
-
-        # --- Training ---
-        train_losses = {"total": [], "action": [], "timing": [],
-                       "error_char": [], "position": []}
-        train_accs = []
-        train_maes = []
-
-        _last_batch_cb = epoch_start
-        for batch_idx, (batch_inputs, batch_labels) in enumerate(train_ds, 1):
-            total, comps, acc, mae = train_step(
-                model, optimizer, batch_inputs, batch_labels, loss_cfg,
-            )
-            train_losses["total"].append(float(total))
-            train_losses["action"].append(float(comps["action"]))
-            train_losses["timing"].append(float(comps["timing"]))
-            train_losses["error_char"].append(float(comps["error_char"]))
-            train_losses["position"].append(float(comps["position"]))
-            train_accs.append(float(acc))
-            train_maes.append(float(mae))
-
-            if batch_callback:
-                now = time.time()
-                if now - _last_batch_cb >= 0.25:
-                    _last_batch_cb = now
-                    batch_callback(
-                        epoch, batch_idx, steps_per_epoch,
-                        train_cfg.epochs, float(total),
-                    )
-
-        # --- Validation ---
-        val_losses = {"total": [], "action": [], "timing": [],
-                     "error_char": [], "position": []}
-        val_accs = []
-        val_maes = []
-
-        for batch_inputs, batch_labels in val_ds:
-            total, comps, acc, mae = val_step(
-                model, batch_inputs, batch_labels, loss_cfg,
-            )
-            val_losses["total"].append(float(total))
-            val_losses["action"].append(float(comps["action"]))
-            val_losses["timing"].append(float(comps["timing"]))
-            val_losses["error_char"].append(float(comps["error_char"]))
-            val_losses["position"].append(float(comps["position"]))
-            val_accs.append(float(acc))
-            val_maes.append(float(mae))
-
-        # --- Epoch stats ---
-        epoch_time = time.time() - epoch_start
-        train_loss = np.mean(train_losses["total"])
-        val_loss = np.mean(val_losses["total"])
-        current_lr = float(lr_schedule(optimizer.iterations))
-
-        if progress_callback:
-            progress_callback(
-                epoch, float(train_loss), float(val_loss),
-                float(np.mean(train_accs)), current_lr, epoch_time,
-            )
-
-        # Log to CSV
+    csv_file = open(csv_path, "w", newline="")
+    try:
+        csv_writer = csv.writer(csv_file)
         csv_writer.writerow([
-            epoch,
-            f"{train_loss:.6f}",
-            f"{np.mean(train_losses['action']):.6f}",
-            f"{np.mean(train_losses['timing']):.6f}",
-            f"{np.mean(train_losses['error_char']):.6f}",
-            f"{np.mean(train_losses['position']):.6f}",
-            f"{np.mean(train_accs):.6f}",
-            f"{np.mean(train_maes):.6f}",
-            f"{val_loss:.6f}",
-            f"{np.mean(val_losses['action']):.6f}",
-            f"{np.mean(val_losses['timing']):.6f}",
-            f"{np.mean(val_losses['error_char']):.6f}",
-            f"{np.mean(val_losses['position']):.6f}",
-            f"{np.mean(val_accs):.6f}",
-            f"{np.mean(val_maes):.6f}",
-            f"{current_lr:.8f}",
-            f"{epoch_time:.2f}",
+            "epoch", "train_loss", "train_action", "train_timing",
+            "train_error_char", "train_position", "train_acc",
+            "train_timing_mae",
+            "val_loss", "val_action", "val_timing",
+            "val_error_char", "val_position", "val_acc", "val_timing_mae",
+            "lr", "time_s",
         ])
-        csv_file.flush()
 
-        # --- Checkpointing ---
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            patience_counter = 0
-            best_path = run_dir / "best_model.keras"
-            model.save(str(best_path))
-        else:
-            patience_counter += 1
-            if patience_counter >= train_cfg.early_stop_patience:
-                break
+        for epoch in range(1, train_cfg.epochs + 1):
+            epoch_start = time.time()
 
-    csv_file.close()
+            # --- Training ---
+            train_losses = {"total": [], "action": [], "timing": [],
+                           "error_char": [], "position": []}
+            train_accs = []
+            train_maes = []
+
+            _last_batch_cb = epoch_start
+            for batch_idx, (batch_inputs, batch_labels) in enumerate(train_ds, 1):
+                total, comps, acc, mae = train_step(
+                    model, optimizer, batch_inputs, batch_labels, loss_cfg,
+                )
+                train_losses["total"].append(float(total))
+                train_losses["action"].append(float(comps["action"]))
+                train_losses["timing"].append(float(comps["timing"]))
+                train_losses["error_char"].append(float(comps["error_char"]))
+                train_losses["position"].append(float(comps["position"]))
+                train_accs.append(float(acc))
+                train_maes.append(float(mae))
+
+                if batch_callback:
+                    now = time.time()
+                    if now - _last_batch_cb >= 0.25:
+                        _last_batch_cb = now
+                        batch_callback(
+                            epoch, batch_idx, steps_per_epoch,
+                            train_cfg.epochs, float(total),
+                        )
+
+            # --- Validation ---
+            val_losses = {"total": [], "action": [], "timing": [],
+                         "error_char": [], "position": []}
+            val_accs = []
+            val_maes = []
+
+            for batch_inputs, batch_labels in val_ds:
+                total, comps, acc, mae = val_step(
+                    model, batch_inputs, batch_labels, loss_cfg,
+                )
+                val_losses["total"].append(float(total))
+                val_losses["action"].append(float(comps["action"]))
+                val_losses["timing"].append(float(comps["timing"]))
+                val_losses["error_char"].append(float(comps["error_char"]))
+                val_losses["position"].append(float(comps["position"]))
+                val_accs.append(float(acc))
+                val_maes.append(float(mae))
+
+            # --- Epoch stats ---
+            epoch_time = time.time() - epoch_start
+            train_loss = np.mean(train_losses["total"])
+            val_loss = np.mean(val_losses["total"])
+            current_lr = float(lr_schedule(optimizer.iterations))
+
+            if progress_callback:
+                progress_callback(
+                    epoch, float(train_loss), float(val_loss),
+                    float(np.mean(train_accs)), current_lr, epoch_time,
+                )
+
+            # Log to CSV
+            csv_writer.writerow([
+                epoch,
+                f"{train_loss:.6f}",
+                f"{np.mean(train_losses['action']):.6f}",
+                f"{np.mean(train_losses['timing']):.6f}",
+                f"{np.mean(train_losses['error_char']):.6f}",
+                f"{np.mean(train_losses['position']):.6f}",
+                f"{np.mean(train_accs):.6f}",
+                f"{np.mean(train_maes):.6f}",
+                f"{val_loss:.6f}",
+                f"{np.mean(val_losses['action']):.6f}",
+                f"{np.mean(val_losses['timing']):.6f}",
+                f"{np.mean(val_losses['error_char']):.6f}",
+                f"{np.mean(val_losses['position']):.6f}",
+                f"{np.mean(val_accs):.6f}",
+                f"{np.mean(val_maes):.6f}",
+                f"{current_lr:.8f}",
+                f"{epoch_time:.2f}",
+            ])
+            csv_file.flush()
+
+            # --- Checkpointing ---
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+                best_path = run_dir / "best_model.keras"
+                model.save(str(best_path))
+            else:
+                patience_counter += 1
+                if patience_counter >= train_cfg.early_stop_patience:
+                    break
+    finally:
+        csv_file.close()
 
     # Save final model
     final_path = run_dir / "final_model.keras"

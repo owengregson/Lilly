@@ -108,7 +108,7 @@ Unified encoder-decoder transformer with action-gated generation.
 
 ## Key Config Classes (lilly.core.config)
 
-- `V3ModelConfig` — d_model=128, nhead=8, 4 layers, char_embed=48, action_embed=16, delay_embed=16, style_dim=16, mdn_components=8, max_decoder_len=80, max_encoder_len=32, context_tail_len=16
+- `V3ModelConfig` — d_model=128, nhead=8, 4 layers, char_embed=48, action_embed=16, delay_embed=16, style_dim=16, mdn_components=8, max_decoder_len=80, max_encoder_len=32, context_tail_len=4
 - `V3TrainConfig` — batch_size=128, epochs=50, lr=3e-4, warmup_steps=2000, focal_gamma=2.0, focal_alpha=(0.25, 0.5, 0.5)
 - Path constants: `PROJECT_ROOT`, `DATA_DIR`, `RAW_DIR`, `PROCESSED_DIR`, `V3_SEGMENT_DIR`, `V3_MODEL_DIR`, `V3_EXPORT_DIR`
 

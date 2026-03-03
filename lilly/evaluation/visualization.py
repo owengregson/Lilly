@@ -141,7 +141,7 @@ def plot_mdn_components(
     dec_len = cfg.max_decoder_len + 1
     dummy = {
         "encoder_chars": tf.zeros((1, cfg.max_encoder_len), dtype=tf.int32),
-        "encoder_lengths": tf.constant([[5]], dtype=tf.int32),
+        "encoder_lengths": tf.constant([5], dtype=tf.int32),
         "decoder_input_chars": tf.zeros((1, dec_len), dtype=tf.int32),
         "decoder_input_delays": tf.zeros((1, dec_len), dtype=tf.float32),
         "decoder_input_actions": tf.zeros((1, dec_len), dtype=tf.int32),

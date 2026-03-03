@@ -40,17 +40,17 @@ def download(
         if local_size == remote_size and remote_size > 0:
             return {"status": "skipped", "size_bytes": local_size}
 
-    resp = requests.get(url, stream=True, timeout=30)
-    resp.raise_for_status()
-    total = int(resp.headers.get("Content-Length", 0))
+    with requests.get(url, stream=True, timeout=30) as resp:
+        resp.raise_for_status()
+        total = int(resp.headers.get("Content-Length", 0))
 
-    downloaded = 0
-    with open(dest, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=chunk_size):
-            f.write(chunk)
-            downloaded += len(chunk)
-            if progress_callback:
-                progress_callback(downloaded, total)
+        downloaded = 0
+        with open(dest, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                f.write(chunk)
+                downloaded += len(chunk)
+                if progress_callback:
+                    progress_callback(downloaded, total)
 
     return {"status": "downloaded", "size_bytes": dest.stat().st_size}
 
