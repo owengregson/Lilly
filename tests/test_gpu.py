@@ -122,5 +122,51 @@ class TestDetectGPU(unittest.TestCase):
         self.assertEqual(p.batch_size, 512)
 
 
+from lilly.core.gpu import auto_tune_config
+
+
+class TestAutoTuneConfig(unittest.TestCase):
+    """auto_tune_config patches V3TrainConfig from a GPUProfile."""
+
+    def test_applies_gpu_profile(self):
+        cfg = V3TrainConfig()
+        profile = GPU_PROFILES["A10"]
+        tuned = auto_tune_config(cfg, profile)
+        self.assertEqual(tuned.batch_size, 256)
+        self.assertEqual(tuned.shuffle_buffer, 100_000)
+        self.assertEqual(tuned.prefetch_buffer, 8)
+
+    def test_cli_overrides_take_priority(self):
+        cfg = V3TrainConfig()
+        profile = GPU_PROFILES["A10"]
+        tuned = auto_tune_config(cfg, profile, overrides={"batch_size": 64})
+        self.assertEqual(tuned.batch_size, 64)  # CLI wins
+        self.assertEqual(tuned.shuffle_buffer, 100_000)  # GPU profile
+
+    def test_non_gpu_fields_preserved(self):
+        cfg = V3TrainConfig(epochs=100, learning_rate=1e-3)
+        profile = GPU_PROFILES["T4"]
+        tuned = auto_tune_config(cfg, profile)
+        self.assertEqual(tuned.epochs, 100)
+        self.assertEqual(tuned.learning_rate, 1e-3)
+
+    def test_cpu_profile(self):
+        cfg = V3TrainConfig()
+        tuned = auto_tune_config(cfg, CPU_PROFILE)
+        self.assertEqual(tuned.batch_size, 32)
+        self.assertEqual(tuned.prefetch_buffer, 2)
+
+    def test_multiple_overrides(self):
+        cfg = V3TrainConfig()
+        profile = GPU_PROFILES["H100"]
+        tuned = auto_tune_config(
+            cfg, profile,
+            overrides={"batch_size": 128, "shuffle_buffer": 50_000},
+        )
+        self.assertEqual(tuned.batch_size, 128)
+        self.assertEqual(tuned.shuffle_buffer, 50_000)
+        self.assertEqual(tuned.prefetch_buffer, 16)  # from H100 profile
+
+
 if __name__ == "__main__":
     unittest.main()
