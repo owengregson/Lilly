@@ -5,6 +5,7 @@ from pathlib import Path
 
 from lilly.cli.ui import BannerAnimator, ProgressUI, print_banner, t
 from lilly.core.config import V3_MODEL_DIR, V3_SEGMENT_DIR, V3ModelConfig, V3TrainConfig
+from lilly.core.gpu import auto_tune_config, detect_gpu
 from lilly.data.pipeline import build_v3_datasets
 from lilly.models.typing_model import build_model
 from lilly.training.trainer import train
@@ -23,18 +24,28 @@ def main() -> None:
 
     model_cfg = V3ModelConfig()
     train_cfg = V3TrainConfig()
-    if args.epochs is not None:
-        train_cfg.epochs = args.epochs
+
+    # Auto-tune for detected GPU (CLI flags override)
+    gpu_profile = detect_gpu()
+    cli_overrides = {}
     if args.batch_size is not None:
-        train_cfg.batch_size = args.batch_size
+        cli_overrides["batch_size"] = args.batch_size
+    if args.epochs is not None:
+        cli_overrides["epochs"] = args.epochs
     if args.learning_rate is not None:
-        train_cfg.learning_rate = args.learning_rate
+        cli_overrides["learning_rate"] = args.learning_rate
+    train_cfg = auto_tune_config(train_cfg, gpu_profile, overrides=cli_overrides)
 
     print_banner()
 
     animator = BannerAnimator()
-    ui = ProgressUI(4, animator)
+    ui = ProgressUI(5, animator)
     animator.start()
+
+    # Step 0: GPU detection
+    label = "Detecting GPU"
+    ui.begin(label)
+    ui.done(label, f"{gpu_profile.name} → batch_size={train_cfg.batch_size}")
 
     # Step 1: Load datasets
     label = "Loading datasets"
