@@ -1,8 +1,20 @@
 """Tests for GPU auto-tuning — lilly.core.gpu and config changes."""
 
+import importlib.util
 import unittest
+from unittest.mock import MagicMock, patch
 
 from lilly.core.config import V3TrainConfig
+from lilly.core.gpu import (
+    CPU_PROFILE,
+    GPU_PROFILES,
+    GPUProfile,
+    _profile_from_vram,
+    auto_tune_config,
+    detect_gpu,
+)
+
+_has_tf = importlib.util.find_spec("tensorflow") is not None
 
 
 class TestV3TrainConfigPrefetch(unittest.TestCase):
@@ -15,9 +27,6 @@ class TestV3TrainConfigPrefetch(unittest.TestCase):
     def test_prefetch_buffer_custom_value(self):
         cfg = V3TrainConfig(prefetch_buffer=8)
         self.assertEqual(cfg.prefetch_buffer, 8)
-
-
-from lilly.core.gpu import GPUProfile, GPU_PROFILES, CPU_PROFILE
 
 
 class TestGPUProfile(unittest.TestCase):
@@ -45,9 +54,6 @@ class TestGPUProfile(unittest.TestCase):
         self.assertEqual(p.shuffle_buffer, 200_000)
 
 
-from lilly.core.gpu import _profile_from_vram
-
-
 class TestVRAMFallback(unittest.TestCase):
     """VRAM-based fallback for unknown GPUs."""
 
@@ -70,11 +76,6 @@ class TestVRAMFallback(unittest.TestCase):
     def test_preserves_gpu_name(self):
         p = _profile_from_vram("RTX 4090", 24.0)
         self.assertEqual(p.name, "RTX 4090")
-
-
-from unittest.mock import patch, MagicMock
-
-from lilly.core.gpu import detect_gpu
 
 
 class TestDetectGPU(unittest.TestCase):
@@ -122,9 +123,6 @@ class TestDetectGPU(unittest.TestCase):
         self.assertEqual(p.batch_size, 512)
 
 
-from lilly.core.gpu import auto_tune_config
-
-
 class TestAutoTuneConfig(unittest.TestCase):
     """auto_tune_config patches V3TrainConfig from a GPUProfile."""
 
@@ -166,13 +164,6 @@ class TestAutoTuneConfig(unittest.TestCase):
         self.assertEqual(tuned.batch_size, 128)
         self.assertEqual(tuned.shuffle_buffer, 50_000)
         self.assertEqual(tuned.prefetch_buffer, 16)  # from H100 profile
-
-
-try:
-    import tensorflow as _tf
-    _has_tf = True
-except ImportError:
-    _has_tf = False
 
 
 @unittest.skipUnless(_has_tf, "TensorFlow not installed")
